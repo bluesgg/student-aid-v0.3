@@ -1,0 +1,32 @@
+# StudentAid Web (MVP) — Cursor Rules
+
+## Source of truth
+- /docs/01_light_prd.md
+- /docs/02_page_and_flow_design.md
+- /docs/03_api_design.md
+- /docs/04_tech_and_code_style.md
+If anything is unclear or conflicting, do NOT invent requirements. Create TODOs and propose 2-3 options.
+
+## Stack & architecture (must follow)
+- Next.js App Router + TypeScript
+- Tailwind CSS
+- TanStack Query for server state (no Redux/MobX for MVP)
+- All data access via Next.js Route Handlers under /app/api/** (BFF)
+- BaaS SDK runs server-side only; client calls only /api/**
+- Package manager: pnpm only
+
+## Routing constraints
+- Public pages: /login, /register
+- App pages: /courses, /courses/[courseId], /courses/[courseId]/files/[fileId]
+- Optional: /courses/[courseId]/outline, /account/usage
+
+## Output format rules
+- Prefer small, reviewable diffs
+- Every endpoint must have: input validation, consistent error JSON, auth guard where required
+- Every page must have: loading/empty/error states
+- AI responses return Markdown; support LaTeX/code blocks where applicable
+
+## Don’ts
+- Don’t call BaaS SDK in client components
+- Don’t add heavy global state management
+- Don’t introduce new libraries unless necessary for MVP
