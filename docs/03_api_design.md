@@ -1,6 +1,7 @@
 # 03 API / 接口设计（草稿）
 
-> 说明：本接口设计为后端 / BFF 视角的抽象 REST API，实际实现时可基于 Supabase / Firebase 提供的认证与存储能力封装。
+> 说明：本接口设计为后端 / BFF 视角的抽象 REST API，**实际实现基于 Supabase（Auth + Postgres + Storage）封装**。
+> BaaS SDK **仅在 server-side Route Handlers 中使用**，前端仅调用 `/api/*` 业务接口。
 > 所有以 `/api/*` 开头的接口默认为 **需要登录的受保护接口**（除登录 / 注册本身），鉴权方式推荐为 `Authorization: Bearer <token>`。
 > 返回内容统一为 JSON；错误采用统一错误结构，详见文末「错误码与通用响应结构」。
 
@@ -542,6 +543,12 @@
   * 行内代码使用单反引号。
 
 > 接口层 **不返回 HTML**，只返回纯文本 Markdown；渲染逻辑统一由前端 Markdown 组件负责。
+
+#### 3.0.6 LLM Provider（实现约束）
+
+* 本 MVP 的 AI 能力（`explain-page`、`explain-selection`、`qa`、`summarize-*`）统一由 **OpenAI API** 提供；
+* OpenAI 调用发生在服务端（Route Handlers / BFF）内部，API Key 仅在服务端环境变量中；
+* 前端不直接调用任何第三方 LLM SDK 或暴露密钥。
 
 ---
 

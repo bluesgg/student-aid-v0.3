@@ -555,6 +555,11 @@
   * 更复杂的学习路径规划与个性化建议；
   * 笔记 / 贴纸导出为讲义手册等功能。
 
+### 7.6 技术选型（MVP 固定）
+
+* **BaaS**：Supabase（Auth + Postgres + Storage），仅在服务端使用 Supabase SDK；前端不直连 BaaS，只调用自家 `/api/*`。
+* **LLM Provider**：OpenAI API，用于所有 AI 端点（`explain-page`、`explain-selection`、`qa`、`summarize-*`）；仅服务端调用，密钥不下发到浏览器。
+
 ---
 
 ## 八、里程碑 & 范围控制（MVP）

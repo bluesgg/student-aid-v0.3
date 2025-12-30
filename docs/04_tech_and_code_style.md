@@ -15,9 +15,10 @@
   * 以 React 组件局部状态 + React Query（TanStack Query）为主；
   * MVP 阶段避免引入 Redux / MobX 等复杂全局状态管理。
 * **数据获取**：
-
   * Next.js Route Handlers（`app/api/*/route.ts`）作为 BFF 层；
-  * BaaS（Supabase / Firebase）SDK 封装在 server 端，前端只调用自家 API。
+  * **BaaS：Supabase（Auth + Postgres + Storage）**，**仅在 server-side 使用 Supabase SDK**；前端只调用自家 API（不直连 Supabase）。
+  * **LLM Provider：OpenAI API**（用于 explain-page / explain-selection / QA / summarize-*），仅在 server-side 调用；密钥仅存在服务端环境变量。
+
 * **包管理工具**：统一使用 `pnpm`，不混用 npm / yarn。
 * **构建与打包**：使用 Next.js 内置构建，不额外自定义 Webpack，除非有明确必要。
 * **代码托管**：GitHub 单仓库（暂不引入 monorepo）。
@@ -150,9 +151,10 @@
     * `askQuestion({...})`
     * `summarizeDocument({...})` 等。
 * **与 BaaS 的交互**：
+  * 在 server 端 Route Handlers 中使用 **Supabase SDK（Auth + Postgres + Storage）**；
+  * **禁止**前端直接依赖/调用 Supabase SDK（本项目约束为 server-side SDK only）；
+  * 前端只感知「课程 / 文件 / AI 接口」等业务 API，不直接依赖 BaaS。
 
-  * 在 server 端 Route Handlers 中使用 Supabase / Firebase SDK；
-  * 前端只感知「课程 / 文件 / AI 接口」等业务 API，不直接依赖 BaaS SDK。
 * **错误处理约定**：
 
   * 鉴权失败（401）：清理本地登录状态，并跳转登录页；
@@ -168,6 +170,11 @@
     * `message`: 用户可读文案；
     * `bucket`: 具体配额桶标识（`learningInteractions` / `documentSummary` / `sectionSummary` / `courseSummary`）。
   * 「Explain this page」不占用用户可见配额桶，前端仅根据接口返回的 `rateLimit` 信息提示自动讲解频率，不与 `Usage` 页中 `aiQuotas` 绑定。
+
+* **LLM 调用约定**：
+  * AI 类接口（`explain-page`、`explain-selection`、`qa`、`summarize-*`）统一由 server-side Route Handlers 调用 **OpenAI API**；
+  * OpenAI API Key 仅存在服务端环境变量（如 `OPENAI_API_KEY`），不得下发到浏览器；
+  * 前端永远只调用 `/api/ai/*`。
 
 ---
 
