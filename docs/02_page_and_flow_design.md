@@ -9,7 +9,8 @@
 | 页面ID | 页面名称                | 路径 URL                               | 说明                                               |
 | ---- | ------------------- | ------------------------------------ | ------------------------------------------------ |
 | P1   | 登录页（含注册入口）          | `/login`                             | 未登录用户入口，支持邮箱+密码登录，并引导到注册页                        |
-| P2   | 注册页                 | `/register`                          | 新用户注册账号，完成后跳转到「我的课程」列表                           |
+| P2   | 注册页                 | `/register`                          | 新用户注册账号；注册成功后提示完成邮箱验证（Email confirmation），验证完成后再登录进入应用
+表                           |
 | P3   | 我的课程列表页（My Courses） | `/courses`                           | 展示当前用户的课程卡片，可新建 / 编辑 / 删除课程                      |
 | P4   | 课程详情 & 资料中心         | `/courses/[courseId]`                | 按 Lecture / Homework / Exam / Other 分组展示课程所有 PDF |
 | P5   | PDF 阅读 & AI 学习页     | `/courses/[courseId]/files/[fileId]` | 左侧 PDF 阅读器，右侧 AI 面板（自动讲解 / 选中讲解 / 问答 / 总结）       |
@@ -47,12 +48,13 @@
 
 ### 2.3 交互与状态
 
-* 用户输入邮箱 + 密码，点击「Sign in」：
+* 点击「Sign in」后：
+  * 登录成功：服务端设置 httpOnly Cookie 会话 → 跳转 P3「My Courses」；
+  * 若返回 `EMAIL_NOT_CONFIRMED`：在表单区域提示
+    * “Please verify your email before signing in. Check your inbox for the confirmation link.”
+    * 保持停留在登录页，不进入应用；
+  * 登录失败：提示邮箱或密码错误。
 
-  * 校验通过 → 创建会话，跳转 P3「我的课程列表页」；
-  * 校验失败 → 在表单下方显示错误文案 `"Incorrect email or password. Please try again."`；
-* 正在登录时按钮进入 loading 状态，避免重复点击；
-* 已登录用户再次访问 `/login` 时自动重定向到 `/courses`。
 
 ---
 
@@ -85,8 +87,13 @@
 
 * 用户填写邮箱 + 密码，点击「Create account」：
 
-  * 后端创建账号成功 → 自动登录并跳转 P3；
-  * 若邮箱已存在 → 显示错误提示，并给出跳转登录页链接。
+  * 注册成功（后端创建账号成功，返回 `needsEmailConfirmation=true`）：
+  * 不自动登录、不跳转 P3；
+  * 在当前页展示「Verify your email」提示（或跳转到一个轻量提示页）：
+    * 提示用户去邮箱点击确认链接；
+    * 提供「Back to sign in」按钮跳转 `/login`；
+  * 只有邮箱验证完成后才允许登录进入应用。
+
 
 ---
 
@@ -591,9 +598,11 @@
 ### F1 创建课程并上传资料（首轮使用）
 
 1. 用户访问 `/login`，若无账号，则从登录页跳转至 `/register` 注册新账号；
-2. 注册成功后自动跳转 P3「My Courses」：
 
-   * 页面显示空状态 + 「Create your first course」按钮；
+2. 注册成功后进入「邮箱验证提示」状态（不自动登录）：
+   * 页面提示用户去邮箱点击确认链接；
+   * 用户完成邮箱确认后，返回 `/login` 登录 → 进入 P3「My Courses」。
+
 3. 用户点击「New course」，在弹窗中输入课程名（必填）与学校 / 学期（可选），点击「Create」：
 
    * 创建成功后，新课程卡片出现在列表中；

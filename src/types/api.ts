@@ -34,6 +34,7 @@ export type ErrorCode =
   | "INTERNAL_ERROR"
   // Auth / User
   | "EMAIL_ALREADY_EXISTS"
+  | "EMAIL_NOT_CONFIRMED"
   // Course / File
   | "COURSE_LIMIT_REACHED"
   | "DUPLICATE_COURSE_NAME"
@@ -56,6 +57,7 @@ export const errorCodeToHttpStatus: Record<ErrorCode, number> = {
   NOT_FOUND: 404,
   INTERNAL_ERROR: 500,
   EMAIL_ALREADY_EXISTS: 400,
+  EMAIL_NOT_CONFIRMED: 403,
   COURSE_LIMIT_REACHED: 400,
   DUPLICATE_COURSE_NAME: 400,
   UNSUPPORTED_FILE_TYPE: 400,

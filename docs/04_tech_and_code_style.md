@@ -143,7 +143,9 @@
 * **API 封装**：
 
   * 在 `/lib/api-client.ts` 中封装基础 `fetchJson` 等函数；
-  * 统一处理鉴权头（`Authorization: Bearer <token>`）、基础错误码解析、超时等；
+  * 统一处理：`credentials: "include"`（基于 httpOnly Cookie 的会话）、基础错误码解析、超时等；
+  * **不要**在前端处理/拼接 `Authorization` 头，也不要把任何 token 写入 localStorage/sessionStorage；
+  * 鉴权失败（401）：视为会话失效，清理前端 user 状态并跳转登录页；必要时可调用 `/api/auth/logout` 触发服务端清 Cookie。
   * 对 AI 类接口（如 `explain-page`、`explain-selection`、`qa`、`summarize-*`）建议单独封装在 `features/ai/api`，并暴露语义化函数，如：
 
     * `explainPage({ courseId, fileId, page })`

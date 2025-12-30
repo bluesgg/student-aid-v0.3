@@ -1,13 +1,17 @@
 import { redirect } from "next/navigation";
+import { getServerUser } from "@/lib/supabase/server";
 
 /**
  * Root Page
  * 
  * Redirects to /courses (authenticated users) or /login (unauthenticated).
- * For now, always redirect to /login as auth is not yet implemented.
  */
-export default function RootPage() {
-  // TODO: Check auth status and redirect accordingly
-  redirect("/login");
+export default async function RootPage() {
+  const user = await getServerUser();
+  
+  if (user) {
+    redirect("/courses");
+  } else {
+    redirect("/login");
+  }
 }
-

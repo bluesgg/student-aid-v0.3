@@ -2,7 +2,10 @@
 
 > 说明：本接口设计为后端 / BFF 视角的抽象 REST API，**实际实现基于 Supabase（Auth + Postgres + Storage）封装**。
 > BaaS SDK **仅在 server-side Route Handlers 中使用**，前端仅调用 `/api/*` 业务接口。
-> 所有以 `/api/*` 开头的接口默认为 **需要登录的受保护接口**（除登录 / 注册本身），鉴权方式推荐为 `Authorization: Bearer <token>`。
+> 所有以 `/api/*` 开头的接口默认为 **需要登录的受保护接口**（除登录 / 注册本身），鉴权方式采用 **httpOnly Cookie 会话**：
+> - `/api/auth/login` 成功后由服务端 `Set-Cookie` 写入会话 Cookie（httpOnly / Secure / SameSite=Lax / Path=/）。
+> - 前端不持久化 accessToken（不使用 localStorage/sessionStorage），也不要求 `Authorization` 头。
+> - 前端请求需携带 Cookie（`fetch(..., { credentials: "include" })`）。
 > 返回内容统一为 JSON；错误采用统一错误结构，详见文末「错误码与通用响应结构」。
 
 本版本已对「AI 讲解 / 贴纸 / 问答 / 总结」相关接口进行了更新，使其与最新的 `01_light_prd.md`、`02_page_and_flow_design.md` 中的设计保持一致，特别是：
@@ -16,9 +19,19 @@
 
 ## 1. 用户与认证相关
 
-### 1.1 POST /api/auth/register
+{
+  "ok": true,
+  "data": {
+    "user": {
+      "id": "user_123",
+      "email": "foo@example.com",
+      "createdAt": "2025-01-01T12:00:00Z"
+    },
+    "needsEmailConfirmation": true
+  }
+}
 
-* **功能**：新用户注册，创建账号。
+* **功能**：用户登录，服务端设置 httpOnly Cookie 会话。
 
 * **是否鉴权**：否。
 
@@ -35,18 +48,18 @@
     "data": {
       "user": {
         "id": "user_123",
-        "email": "foo@example.com",
-        "createdAt": "2025-01-01T12:00:00Z"
-      },
-      "accessToken": "jwt-token"
+        "email": "foo@example.com"
+      }
     }
   }
   ```
+* **会话**：成功时通过 `Set-Cookie` 写入会话 Cookie（httpOnly），后续受保护接口通过 Cookie 鉴权。
 
 * **错误码**：
+  * `UNAUTHORIZED`（账号不存在或密码错误）
+  * `EMAIL_NOT_CONFIRMED`（账号已注册但尚未完成邮箱验证）
+  * `INVALID_INPUT`
 
-  * `INVALID_INPUT`（邮箱格式错误、密码过短等）
-  * `EMAIL_ALREADY_EXISTS`（邮箱已注册）
 
 ---
 
@@ -105,13 +118,13 @@
 
 * **错误码**：
 
-  * `UNAUTHORIZED`（token 过期或无效）
+  会话无效或已过期（Cookie 无效）
 
 ---
 
 ### 1.4 POST /api/auth/logout
 
-* **功能**：登出，服务端可做 token 失效（如维护 denylist）；前端同时清理本地状态。
+* **功能**：登出，服务端清理会话 Cookie；前端同时清理本地状态。
 * **是否鉴权**：是。
 * **请求体**：空。
 * **响应**：
@@ -1262,6 +1275,7 @@
 * **认证 / 用户类**：
 
   * `EMAIL_ALREADY_EXISTS`：注册时邮箱已存在。
+  * `EMAIL_NOT_CONFIRMED`：登录时账号未完成邮箱验证（HTTP 403 或 401；建议用 403 更语义化）。
 
 * **课程 / 文件类**：
 

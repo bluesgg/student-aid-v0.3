@@ -1,18 +1,41 @@
+"use client";
+
 /**
  * App Routes Layout
  * 
  * Layout for authenticated pages.
- * Includes navigation header and main content area.
+ * Includes navigation header with user menu.
  */
 
 import * as React from "react";
 import Link from "next/link";
+import { useUser, useLogout } from "@/features/auth";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 export default function AppLayout({
   children,
 }: {
   children: React.ReactNode;
 }) {
+  const { data: user, isLoading } = useUser();
+  const logoutMutation = useLogout();
+
+  const handleLogout = async () => {
+    await logoutMutation.mutateAsync({});
+  };
+
+  // Get user initials for avatar
+  const userInitials = React.useMemo(() => {
+    if (!user?.email) return "U";
+    return user.email.charAt(0).toUpperCase();
+  }, [user?.email]);
+
   return (
     <div className="flex min-h-full flex-col">
       {/* Navigation Header */}
@@ -57,12 +80,41 @@ export default function AppLayout({
             </Link>
           </nav>
 
-          {/* User Menu Placeholder */}
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-surface-200 text-sm font-medium text-surface-600">
-              U
-            </div>
-          </div>
+          {/* User Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <button className="flex h-8 w-8 items-center justify-center rounded-full bg-brand-100 text-sm font-medium text-brand-700 transition-colors hover:bg-brand-200 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-2">
+                {isLoading ? (
+                  <span className="h-4 w-4 animate-pulse rounded-full bg-brand-300" />
+                ) : (
+                  userInitials
+                )}
+              </button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              {user && (
+                <>
+                  <div className="px-2 py-1.5">
+                    <p className="text-sm font-medium text-surface-900">
+                      {user.email}
+                    </p>
+                  </div>
+                  <DropdownMenuSeparator />
+                </>
+              )}
+              <DropdownMenuItem asChild>
+                <Link href="/account/usage">Usage & Quotas</Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={handleLogout}
+                disabled={logoutMutation.isPending}
+                className="text-red-600 focus:bg-red-50 focus:text-red-700"
+              >
+                {logoutMutation.isPending ? "Signing out..." : "Sign out"}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 
@@ -71,4 +123,3 @@ export default function AppLayout({
     </div>
   );
 }
-

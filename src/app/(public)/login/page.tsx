@@ -5,31 +5,70 @@
  * 
  * User login with email and password.
  * Redirects to /courses on success.
+ * Handles EMAIL_NOT_CONFIRMED with resend option.
  */
 
 import * as React from "react";
 import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { useLogin, useResendConfirmation } from "@/features/auth";
+import { isApiOk, isApiError } from "@/types/api";
 
 export default function LoginPage() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const loginMutation = useLogin();
+  const resendMutation = useResendConfirmation();
+
   const [email, setEmail] = React.useState("");
   const [password, setPassword] = React.useState("");
   const [error, setError] = React.useState<string | null>(null);
-  const [isLoading, setIsLoading] = React.useState(false);
+  const [showResend, setShowResend] = React.useState(false);
+  const [resendSuccess, setResendSuccess] = React.useState(false);
+
+  // Get next URL from query params
+  const next = searchParams.get("next") ?? "/courses";
+
+  // Check for callback errors
+  const callbackError = searchParams.get("error");
+  const callbackMessage = searchParams.get("message");
+
+  React.useEffect(() => {
+    if (callbackError && callbackMessage) {
+      setError(decodeURIComponent(callbackMessage));
+    }
+  }, [callbackError, callbackMessage]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
-    setIsLoading(true);
+    setShowResend(false);
+    setResendSuccess(false);
 
-    // TODO: Implement actual login via /api/auth/login
-    // For now, simulate loading
-    await new Promise((resolve) => setTimeout(resolve, 1000));
-    setIsLoading(false);
-    
-    // Placeholder: Show error for demo
-    setError("Login functionality will be implemented in Milestone 1.");
+    const response = await loginMutation.mutateAsync({ email, password });
+
+    if (isApiOk(response)) {
+      // Login successful, redirect
+      router.push(next);
+      router.refresh();
+    } else if (isApiError(response)) {
+      setError(response.error.message);
+      
+      // Show resend option if email not confirmed
+      if (response.error.code === "EMAIL_NOT_CONFIRMED") {
+        setShowResend(true);
+      }
+    }
+  };
+
+  const handleResend = async () => {
+    setResendSuccess(false);
+    const response = await resendMutation.mutateAsync({ email });
+    if (isApiOk(response)) {
+      setResendSuccess(true);
+    }
   };
 
   return (
@@ -65,10 +104,34 @@ export default function LoginPage() {
         {error && (
           <div className="rounded-lg bg-red-50 p-3 text-sm text-red-700">
             {error}
+            {showResend && (
+              <div className="mt-2">
+                <button
+                  type="button"
+                  onClick={handleResend}
+                  disabled={resendMutation.isPending}
+                  className="font-medium text-red-800 underline hover:text-red-900"
+                >
+                  {resendMutation.isPending
+                    ? "Sending..."
+                    : "Resend confirmation email"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
-        <Button type="submit" className="w-full" isLoading={isLoading}>
+        {resendSuccess && (
+          <div className="rounded-lg bg-green-50 p-3 text-sm text-green-700">
+            Confirmation email sent! Please check your inbox.
+          </div>
+        )}
+
+        <Button
+          type="submit"
+          className="w-full"
+          isLoading={loginMutation.isPending}
+        >
           Sign in
         </Button>
       </form>
@@ -85,4 +148,3 @@ export default function LoginPage() {
     </div>
   );
 }
-

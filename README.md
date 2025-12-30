@@ -56,7 +56,15 @@ src/
 │   │   │   └── page.tsx              # P3: Course List
 │   │   └── account/
 │   │       └── usage/                # P7: Usage & Quotas
+│   ├── auth/
+│   │   └── callback/       # Email confirmation callback
 │   ├── api/                # API Route Handlers (BFF)
+│   │   └── auth/           # Auth endpoints
+│   │       ├── register/   # POST: User registration
+│   │       ├── login/      # POST: User login
+│   │       ├── logout/     # POST: User logout
+│   │       ├── me/         # GET: Current user
+│   │       └── resend-confirmation/  # POST: Resend email
 │   ├── layout.tsx          # Root layout
 │   └── providers.tsx       # Client providers
 ├── components/
@@ -64,16 +72,18 @@ src/
 │   ├── page-shell.tsx      # Page layout wrapper
 │   ├── empty-state.tsx     # Empty state component
 │   └── error-state.tsx     # Error state component
-├── features/               # Feature modules (to be added)
-│   ├── auth/
-│   ├── courses/
-│   ├── files/
-│   ├── reader/
-│   ├── ai/
-│   └── usage/
+├── features/               # Feature modules
+│   └── auth/               # Auth API client & hooks
+│       ├── api/
+│       └── hooks/
 ├── lib/
 │   ├── api-client.ts       # API client with unified error handling
+│   ├── api-helpers.ts      # Route handler helpers
 │   ├── query-client.ts     # TanStack Query configuration
+│   ├── supabase/           # Supabase client configuration
+│   │   ├── env.ts          # Environment validation
+│   │   ├── server.ts       # Server client
+│   │   └── middleware.ts   # Middleware client
 │   └── utils.ts            # Utility functions
 ├── types/
 │   └── api.ts              # API response types and error codes
@@ -98,7 +108,7 @@ Create a `.env.local` file with the following variables:
 
 ```env
 # Supabase (required for Milestone 1+)
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
+NEXT_PUBLIC_SUPABASE_URL=https://your-project-id.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 
@@ -106,7 +116,15 @@ SUPABASE_SERVICE_ROLE_KEY=your_service_role_key
 OPENAI_API_KEY=your_openai_api_key
 ```
 
-> **Note**: These are placeholder values. Actual Supabase and OpenAI integration will be implemented in later milestones.
+### Supabase Configuration
+
+1. Create a new Supabase project at [supabase.com](https://supabase.com)
+2. Go to **Settings > API** to get your project URL and keys
+3. In **Authentication > Providers**, enable Email/Password
+4. In **Authentication > URL Configuration**, add:
+   - Site URL: `http://localhost:3000`
+   - Redirect URLs: `http://localhost:3000/auth/callback`
+5. Enable email confirmation in **Authentication > Settings** (optional but recommended)
 
 ## Development Guidelines
 
@@ -134,8 +152,8 @@ OPENAI_API_KEY=your_openai_api_key
 
 ## Milestone Progress
 
-- [x] **Milestone 0**: Scaffold & baseline UX (current)
-- [ ] **Milestone 1**: Auth (Supabase)
+- [x] **Milestone 0**: Scaffold & baseline UX
+- [x] **Milestone 1**: Auth (Supabase) with email confirmation
 - [ ] **Milestone 2**: Courses CRUD
 - [ ] **Milestone 3**: Files upload/list
 - [ ] **Milestone 4**: PDF reader
