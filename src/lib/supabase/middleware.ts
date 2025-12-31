@@ -60,3 +60,4 @@ export async function createMiddlewareSupabaseClient(request: NextRequest) {
   return { supabase, response: supabaseResponse, user };
 }
 
+

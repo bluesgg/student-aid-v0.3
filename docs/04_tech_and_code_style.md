@@ -1,284 +1,595 @@
-# 04 技术与代码规范（StudentAid Web） 
+# 04 技术与代码规范（精简版）
 
-> 目标：在 MVP 阶段保持实现简单可控的前提下，统一技术栈与基础代码规范，降低后续维护和扩展成本；同时为「PDF + AI 讲解 / 贴纸 / 问答 / 总结」相关功能提供稳定的技术基座。
-
----
-
-## 1. 技术栈约定
-
-* **前端框架**：Next.js（App Router） + React + TypeScript
-* **样式方案**：Tailwind CSS + 必要时少量自定义 CSS
-* **组件库（可选）**：Headless UI / Radix UI（仅用于无锁定样式的交互组件）
-* **图标**：Heroicons 或 Lucide（统一来源，避免混用）
-* **状态管理**：
-
-  * 以 React 组件局部状态 + React Query（TanStack Query）为主；
-  * MVP 阶段避免引入 Redux / MobX 等复杂全局状态管理。
-* **数据获取**：
-  * Next.js Route Handlers（`app/api/*/route.ts`）作为 BFF 层；
-  * **BaaS：Supabase（Auth + Postgres + Storage）**，**仅在 server-side 使用 Supabase SDK**；前端只调用自家 API（不直连 Supabase）。
-  * **LLM Provider：OpenAI API**（用于 explain-page / explain-selection / QA / summarize-*），仅在 server-side 调用；密钥仅存在服务端环境变量。
-
-* **包管理工具**：统一使用 `pnpm`，不混用 npm / yarn。
-* **构建与打包**：使用 Next.js 内置构建，不额外自定义 Webpack，除非有明确必要。
-* **代码托管**：GitHub 单仓库（暂不引入 monorepo）。
-* **部署目标**：Vercel 或其他支持 Next.js 的托管平台。
+> **文档定位**：技术栈、代码规范与实现约束；业务需求见01，API契约见03。
 
 ---
 
-## 2. 前端目录结构约定
+## 1. 技术栈（固定）
 
-> 以 Next.js App Router 默认结构为基础，按「路由 / 业务模块 / 通用组件 / 工具」分层。
-
-* `/src`
-
-  * `/app`
-
-    * 公共路由（如 `/login`、`/register`）放在 `(public)` 组；
-    * 业务路由（如 `/courses`、`/courses/[courseId]`）放在 `(app)` 组；
-    * 每个 API 路由使用 Route Handlers：如 `/app/api/courses/route.ts`。
-  * `/components`
-
-    * 无业务耦合的通用 UI 组件：`Button`, `Input`, `Dialog`, `PageHeader` 等；
-    * 相对独立、可在多个 feature 间复用。
-  * `/features`
-
-    * 按业务模块拆分：
-
-      * `/features/auth`（登录 / 注册表单与 hooks）
-      * `/features/courses`（课程列表、课程卡片、创建 / 删除逻辑）
-      * `/features/files`（PDF 列表、上传控件）
-      * `/features/reader`（PDF 阅读器壳组件，负责左侧 PDF 区域）
-      * `/features/ai`（右侧 AI 面板、贴纸栏、问答区域、总结区域的逻辑与 UI）
-      * `/features/usage`（配额展示与 Usage 页）
-    * 每个模块内再按 `components` / `hooks` / `api` / `types` 做简单分层。
-  * `/lib`
-
-    * 通用工具函数（日期格式化、错误处理、API 封装等）；
-    * BaaS / 后端 SDK 的轻量封装（如 Supabase client 初始化）。
-  * `/types`
-
-    * 全局可复用的 TypeScript 类型定义：
-
-      * 领域模型：`User`, `Course`, `File`, `Sticker`, `Quota`, `Outline` 等；
-      * API 响应类型（如 `ApiResponse<T>` 等）。
-  * `/config`
-
-    * 环境变量读取与运行时配置（后端基 URL、配额默认值、AI 开关等）。
-  * `/tests`
-
-    * 前端单元测试 / 组件测试；
-    * 测试文件推荐与被测模块路径对应，例如：`features/courses/__tests__/course-list.test.tsx`。
+| 层次 | 技术选型 | 约束 |
+|------|---------|------|
+| **前端框架** | Next.js 14+ (App Router) + React 18+ + TypeScript 5.3+ | 统一使用App Router |
+| **样式** | Tailwind CSS | 少量自定义CSS |
+| **组件库** | Headless UI / Radix UI | 仅用于无锁定样式的交互组件 |
+| **图标** | Heroicons 或 Lucide | 统一来源，不混用 |
+| **状态管理** | React局部状态 + TanStack Query | MVP不引入Redux/MobX |
+| **BaaS** | Supabase (Auth + Postgres + Storage) | **仅server-side使用SDK** |
+| **LLM** | OpenAI API | **仅server-side调用** |
+| **包管理** | pnpm | 不混用npm/yarn |
+| **部署目标** | Vercel 或支持Next.js的托管平台 | - |
 
 ---
 
-## 3. TypeScript 与代码规范
+## 2. 关键依赖版本
 
-* **语言设置**：
+### 2.1 核心框架
 
-  * 全项目使用 TypeScript，禁用 `.js` 业务代码（可保留极少数配置文件除外）；
-  * `strict` 模式开启，避免 `any` 滥用。
-* **tsconfig 基础设置（示例）**：
+```json
+{
+  "dependencies": {
+    "next": "^14.1.0",
+    "react": "^18.2.0",
+    "typescript": "^5.3.0"
+  }
+}
+```
 
-  * `"strict": true`
-  * `"noImplicitAny": true`
-  * `"noUnusedLocals": true` / `"noUnusedParameters": true`
-  * `"baseUrl": "src"` 并配置合理的 `paths`（适度使用，避免过度 alias）。
-* **ESLint + Prettier**：
+### 2.2 Supabase集成（Server-Side Only）
 
-  * 使用 `eslint-config-next` + `@typescript-eslint` 规则集；
-  * 使用 Prettier 格式化，禁止与 ESLint 规则冲突（开启 `eslint-config-prettier`）；
-  * CI（或 pre-commit）中执行 `pnpm lint` 和 `pnpm test`。
-* **类型使用约定**：
+```json
+{
+  "dependencies": {
+    "@supabase/supabase-js": "^2.39.0",
+    "@supabase/ssr": "^0.1.0"
+  }
+}
+```
 
-  * 首选 `type` 定义对象与联合类型，不强制禁止 `interface`，但保持一份类型只在一个地方定义；
-  * 避免隐式 `any`，如有特殊必要使用 `any` 时：
+**约束**：
+* 使用`@supabase/ssr`包处理App Router的server-side auth
+* **禁止**在前端组件中直接导入`@supabase/supabase-js`
 
-    * 需显式关闭对应 ESLint 规则，如 `// eslint-disable-next-line @typescript-eslint/no-explicit-any`；
-    * 并在同一行写明原因注释。
-* **命名规范**：
+### 2.3 OpenAI集成
 
-  * 组件、类名：**大驼峰**（PascalCase），如 `CourseCard`, `PdfReader`, `AiPanel`；
-  * 函数、变量：**小驼峰**（camelCase），如 `fetchCourses`, `handleSubmit`；
-  * hooks：以 `use` 开头，如 `useCourseList`, `useAiExplainPage`；
-  * 常量 / 枚举：`UPPER_SNAKE_CASE`，如 `COURSE_LIMIT`, `AI_QUOTA_BUCKETS`。
-* **文件命名**：
+```json
+{
+  "dependencies": {
+    "openai": "^4.28.0"
+  }
+}
+```
 
-  * 组件文件：小写中划线（kebab-case），如 `course-card.tsx`, `pdf-reader.tsx`；
-  * hook 文件：`use-xxx.ts`，如 `use-course-list.ts`；
-  * 类型文件：`*.types.ts` 或集中存放于 `/types`。
-* **文件与函数大小**：
+**模型配置**：
 
-  * 单个文件建议不超过约 **300 行**，超过时考虑拆分组件 / 工具函数；
-  * 单个函数建议不超过约 **50 行**，保持单一职责；
-  * React 组件尽量只负责一层 UI + 简单状态，将复杂逻辑下沉到 hooks / lib 函数。
+| 功能 | 模型 | 原因 |
+|------|------|------|
+| 自动讲解 | `gpt-4-turbo-preview` | 需理解长上下文（单页2-3k tokens） |
+| 选中讲解 | `gpt-4` | 平衡质量与成本 |
+| 问答 | `gpt-4-turbo-preview` | 需检索整份PDF |
+| 文档总结 | `gpt-4-turbo-preview` | 需128K context window |
+| 章节总结 | `gpt-3.5-turbo-16k` | 成本优化 |
+| 课程提纲 | `gpt-4-turbo-preview` | 需整合多份文档 |
 
----
+**Streaming配置**：
+* 启用接口：explain-page / explain-selection / qa
+* 目标：首token延迟<2s，完整响应<10s
 
-## 4. React / Next.js 使用约定
+### 2.4 PDF处理
 
-* **组件粒度**：
+**前端渲染**：
+```json
+{
+  "dependencies": {
+    "react-pdf": "^7.7.0",
+    "pdfjs-dist": "^3.11.174"
+  }
+}
+```
 
-  * 页面级组件（page）只负责路由与业务模块组合；
-  * 复用型视图抽成 `features/*/components`；
-  * 仅在有需要时再拆到 `/components` 通用组件。
-* **Hooks 使用**：
+**服务端解析**：
+```json
+{
+  "dependencies": {
+    "pdf-parse": "^1.1.1",
+    "pdf-lib": "^1.17.1"
+  }
+}
+```
 
-  * 业务数据获取用 `useQuery` / `useMutation`，统一封装在 `features/*/api` 或 `features/*/hooks` 下；
-  * 避免在组件中直接写 `fetch`，统一走封装的 API client。
-* **服务端 / 客户端划分**：
+**扫描件检测逻辑**：
+```typescript
+// lib/pdf-utils.ts
+export async function detectScannedPdf(buffer: Buffer): Promise<boolean> {
+  const data = await pdf(buffer, { max: 3 })  // 只解析前3页
+  const avgCharsPerPage = data.text.length / Math.min(data.numpages, 3)
+  return avgCharsPerPage < 50  // <50字符/页视为扫描件
+}
+```
 
-  * 默认使用客户端组件渲染（需要浏览器交互的部分）；
-  * 与 SEO 明显相关或可 SSR 的页面再考虑 server component；
-  * Route Handlers 中禁止直接返回 React 组件，只返回 JSON。
-* **路由与导航**：
+### 2.5 Markdown与LaTeX渲染
 
-  * 使用 Next.js App Router（`/app` 目录），避免使用旧的 pages Router；
-  * 导航使用 `next/link` + `useRouter`（仅在必要时使用编程式导航）。
+```json
+{
+  "dependencies": {
+    "react-markdown": "^9.0.1",
+    "remark-math": "^6.0.0",
+    "remark-gfm": "^4.0.0",
+    "rehype-katex": "^7.0.0",
+    "katex": "^0.16.9"
+  }
+}
+```
 
----
+**注意**：
+* `react-markdown` v9.x为ESM-only，需Next.js 14+支持
+* KaTeX CSS需全局导入：`import 'katex/dist/katex.min.css'`
 
-## 5. 数据访问、错误处理与配额
+### 2.6 代码语法高亮
 
-* **API 封装**：
+```json
+{
+  "dependencies": {
+    "prism-react-renderer": "^2.3.1"
+  }
+}
+```
 
-  * 在 `/lib/api-client.ts` 中封装基础 `fetchJson` 等函数；
-  * 统一处理：`credentials: "include"`（基于 httpOnly Cookie 的会话）、基础错误码解析、超时等；
-  * **不要**在前端处理/拼接 `Authorization` 头，也不要把任何 token 写入 localStorage/sessionStorage；
-  * 鉴权失败（401）：视为会话失效，清理前端 user 状态并跳转登录页；必要时可调用 `/api/auth/logout` 触发服务端清 Cookie。
-  * 对 AI 类接口（如 `explain-page`、`explain-selection`、`qa`、`summarize-*`）建议单独封装在 `features/ai/api`，并暴露语义化函数，如：
+### 2.7 状态管理与数据获取
 
-    * `explainPage({ courseId, fileId, page })`
-    * `explainSelection({...})`
-    * `askQuestion({...})`
-    * `summarizeDocument({...})` 等。
-* **与 BaaS 的交互**：
-  * 在 server 端 Route Handlers 中使用 **Supabase SDK（Auth + Postgres + Storage）**；
-  * **禁止**前端直接依赖/调用 Supabase SDK（本项目约束为 server-side SDK only）；
-  * 前端只感知「课程 / 文件 / AI 接口」等业务 API，不直接依赖 BaaS。
-
-* **错误处理约定**：
-
-  * 鉴权失败（401）：清理本地登录状态，并跳转登录页；
-  * 资源不存在（404）：在页面中展示友好「Not found」状态；
-  * 配额相关错误（`QUOTA_EXCEEDED` 等）：映射到 UI 上的「配额已用尽」提示，并同步更新前端配额状态；
-  * 自动讲解限流错误（如 `AUTO_EXPLAIN_LIMIT_REACHED`）：仅针对「Explain this page」按钮做降级提示；
-  * 其他错误：统一 toast 或错误提示区域展示。
-* **配额检查**：
-
-  * AI 类 API 在服务端统一做配额检查，返回统一错误结构：
-
-    * `code: "QUOTA_EXCEEDED"`；
-    * `message`: 用户可读文案；
-    * `bucket`: 具体配额桶标识（`learningInteractions` / `documentSummary` / `sectionSummary` / `courseSummary`）。
-  * 「Explain this page」不占用用户可见配额桶，前端仅根据接口返回的 `rateLimit` 信息提示自动讲解频率，不与 `Usage` 页中 `aiQuotas` 绑定。
-
-* **LLM 调用约定**：
-  * AI 类接口（`explain-page`、`explain-selection`、`qa`、`summarize-*`）统一由 server-side Route Handlers 调用 **OpenAI API**；
-  * OpenAI API Key 仅存在服务端环境变量（如 `OPENAI_API_KEY`），不得下发到浏览器；
-  * 前端永远只调用 `/api/ai/*`。
-
----
-
-## 6. UI / 组件与样式约定
-
-* **Tailwind 使用**：
-
-  * 优先使用 Tailwind 工具类实现布局和样式；
-  * 对复用度较高的一组样式，可抽成组件或封装为 `className` 帮助函数；
-  * 避免在 JSX 中出现过长的 class 串（> 1–2 行），可拆到子组件。
-* **组件设计**：
-
-  * 通用组件保持「无业务逻辑」、只暴露 props；
-  * 业务组件（如 `CourseCard`、`PdfReaderShell`、`AiPanel`、`StickerList`）允许包含少量业务逻辑，但过重时应分拆 hooks。
-* **AI 面板与贴纸组件建议**：
-
-  * 右侧 AI 区域拆分为若干组件：
-
-    * `AiPanel`：整体容器，负责上下区域拆分；
-    * `StickerList`：显示贴纸列表（自动 + 手动）；
-    * `StickerItem`：单条贴纸组件（含折叠 / 展开、内部滚动）；
-    * `QaPanel` / `QaHistory` / `QaInput`：问答与总结区域；
-  * 贴纸组件应支持：
-
-    * `auto` / `manual` 两种类型的样式差异（如不同背景色 / 标签）；
-    * 折叠 / 展开状态；
-    * 内部滚动（max-height + `overflow-auto`）。
-* **交互细节**：
-
-  * 按钮 / 链接需有明确的 hover / active / disabled 状态；
-  * 所有可点击区域在键盘导航与屏幕阅读器下可用（可后续逐步完善 a11y）；
-  * 贴纸与左侧 PDF 的联动（点击贴纸滚动 PDF、点击页码引用跳转）在组件层体现为明确的回调 props（例如 `onJumpToPage(page, anchorRect?)`）。
+```json
+{
+  "dependencies": {
+    "@tanstack/react-query": "^5.20.0",
+    "@tanstack/react-query-devtools": "^5.20.0"
+  }
+}
+```
 
 ---
 
-## 7. 性能、监控与质量
+## 3. Supabase集成方式（Server-Side Auth）
 
-* **性能基线**：
+### 3.1 认证流程架构
 
-  * 典型 PDF（几十页）在桌面端浏览器的首屏加载时间控制在合理范围内（例如 ≤ 3 秒）；
-  * AI 响应首 token 目标 ≤ 5 秒：
+**不使用**：传统session表 + 自定义Cookie
 
-    * 调用 AI 接口时立即显示 loading 状态；
-    * 超时（如 > 8–10 秒）需给出「仍在处理中」或重试入口。
-* **PDF 渲染**：
+**采用**：Supabase Server-Side Auth
+* Supabase签发JWT (access token 1h + refresh token 7d)
+* 通过`@supabase/ssr`将token存储在**httpOnly cookie**中
+* Next.js middleware和Route Handlers中使用`createServerClient`读取cookie并自动刷新token
 
-  * 默认分页渲染（page-by-page），避免一次性渲染整份 PDF；
-  * 滚动模式下，对大型 PDF 可考虑虚拟滚动或分批加载；
-  * 与贴纸加载策略联动：
+### 3.2 Cookie配置
 
-    * 初始只加载「当前页 ± 2 页」贴纸；
-    * 向上 / 向下滚动时按需加载更多贴纸数据。
-* **监控与日志（前端）**：
+* **名称**：`sb-<project-ref>-auth-token`（Supabase自动生成）
+* **属性**：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`
+* **前端约束**：无需（也不应该）手动操作此cookie
 
-  * 至少记录 AI 调用失败的基础信息（接口、错误码、耗时），便于排查问题；
-  * 针对「Explain this page」「explain-selection」「qa」「summarize-*」等关键路径增加埋点（可在 `features/ai` 内集中封装）；
-  * 若后续接入前端监控（如 Sentry），优先上报严重 JS 错误和白屏问题。
-* **国际化（i18n）准备**：
+### 3.3 服务端Client创建
 
-  * MVP 阶段不做多语言切换，但：
+```typescript
+// lib/supabase/server.ts
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
 
-    * 用户可见文案集中管理（如 `/config/texts.ts` 或简单 i18n 文件）；
-    * 避免在多个组件中重复硬编码相同文案。
+export function createClient() {
+  const cookieStore = cookies()
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name) { return cookieStore.get(name)?.value },
+        set(name, value, options) { cookieStore.set({ name, value, ...options }) },
+        remove(name, options) { cookieStore.set({ name, value: '', ...options }) },
+      },
+    }
+  )
+}
+```
 
----
+### 3.4 Middleware中的会话刷新
 
-## 8. AI 回复格式渲染与富文本支持
+```typescript
+// middleware.ts
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse } from 'next/server'
 
-> 本节针对右侧 AI 面板（贴纸、问答、总结、提纲等）统一的富文本渲染能力与使用约定。
+export async function middleware(request: NextRequest) {
+  let response = NextResponse.next({ request: { headers: request.headers } })
+  const supabase = createServerClient(/* ... */)
+  await supabase.auth.getUser()  // 自动刷新session
+  return response
+}
+```
 
-* **Markdown 渲染组件**：
+### 3.5 前端约束
 
-  * 统一使用 `MarkdownRenderer` 组件（位于 `/src/components/markdown-renderer.tsx`）来渲染右侧 AI 面板中的所有**回复文本**；
-  * 基于 `react-markdown`、`remark-math`、`remark-gfm`、`rehype-katex`、`rehype-raw` 实现，默认支持 GitHub 风格 Markdown、**完整 Markdown 语法**与数学公式。
+* 调用`/api/*`时使用`credentials: 'include'`
+* 浏览器自动携带httpOnly cookie
+* **禁止**在前端读取/存储token（不用localStorage/sessionStorage）
 
-* **LaTeX 数学公式**：
-
-  * 支持行内公式：`$...$` 与 `\(...\)`；
-  * 支持块级公式：`$$...$$` 与 `\[...\]`；
-  * 使用 KaTeX（需引入 `katex/dist/katex.min.css`）进行渲染；
-  * 要求 AI 回复中的公式语法尽量符合 KaTeX 能力范围，避免使用 KaTeX 明显不支持的宏。
-
-* **代码语法高亮**：
-
-  * 使用 `prism-react-renderer` 对代码块进行语法高亮，当前主题可使用 `vsLight` 或类似浅色主题；
-  * 代码块统一使用三反引号语法并带上语言标记，例如：
-
-    * ` ```python`、` ```javascript`、` ```typescript`、` ```java`、` ```cpp` 等；
-  * 行内代码统一使用单反引号包裹，由组件渲染为等宽字体 + 浅背景的样式。
-
-* **使用约定**：
-
-  * 所有与 AI 相关的前端展示（包括但不限于：
-
-    * 自动讲解贴纸（Explain this page）；
-    * 选中文本讲解贴纸（From selection / 追问链）；
-    * 基于当前 PDF 的问答回答；
-    * 文档总结 / 章节总结 / 课程级提纲；）
-      均不直接渲染 `innerHTML`，而是接收后端返回的 **纯文本 Markdown 字符串** 并交给 `MarkdownRenderer` 渲染；
-  * 若后续新增 AI 能力（例如导出为带公式的讲义、生成学习 handout 等），应优先复用或扩展该组件，而非重新实现 Markdown / LaTeX / 代码高亮解析逻辑；
-  * 与 PRD / API 设计（01 / 03 文档）中的「AI 文本 / 回复格式约定」保持一致：后端不返回 HTML，只返回 Markdown 文本。
+**参考文档**：
+* [Supabase Server-Side Auth for Next.js](https://supabase.com/docs/guides/auth/server-side/nextjs)
+* [@supabase/ssr Package](https://github.com/supabase/auth-helpers/tree/main/packages/ssr)
 
 ---
 
-> 本规范是 MVP 阶段的技术与代码基线。后续如果团队规模或功能复杂度明显上升，可以在本规范基础上补充更细致的组件设计规范（如表单 / 列表 / 弹窗模式）、状态管理约定（如引入 Zustand / Redux）、以及更严格的测试覆盖率目标（如行覆盖率 / 分支覆盖率），但应始终保持与 PRD / API 文档中对「PDF + AI 讲解 / 贴纸 / 问答 / 总结」的设计一致。
+## 4. 前端目录结构
+
+```
+/src
+  /app
+    /(public)           # 公共路由：/login, /register
+    /(app)              # 业务路由：/courses, /courses/[courseId], ...
+    /api                # Route Handlers：/api/courses/route.ts, ...
+    /auth/callback      # 邮箱验证回调（非/api路径）
+  /components           # 通用UI组件：Button, Input, Dialog, ...
+  /features             # 业务模块
+    /auth               # 登录/注册表单与hooks
+    /courses            # 课程列表、卡片、创建/删除
+    /files              # PDF列表、上传
+    /reader             # PDF阅读器（左侧）
+    /ai                 # AI面板、贴纸、问答、总结（右侧）
+    /usage              # 配额展示
+  /lib                  # 通用工具函数、API封装、BaaS SDK封装
+  /types                # 全局类型定义：User, Course, File, Sticker, ...
+  /config               # 环境变量读取与配额配置
+  /tests                # 前端单元测试/组件测试
+```
+
+**模块内部结构示例**：
+```
+/features/ai
+  /components         # AI面板、贴纸列表、问答输入等
+  /hooks              # useExplainPage, useExplainSelection, ...
+  /api                # explainPage(), explainSelection(), askQuestion(), ...
+  /types              # Sticker, AiResponse, ...
+```
+
+---
+
+## 5. TypeScript与代码规范
+
+### 5.1 语言设置
+
+* 全项目使用TypeScript，禁用`.js`业务代码
+* `strict`模式开启，避免`any`滥用
+
+**tsconfig基础设置**：
+```json
+{
+  "compilerOptions": {
+    "strict": true,
+    "noImplicitAny": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "baseUrl": "src"
+  }
+}
+```
+
+### 5.2 ESLint + Prettier
+
+* 使用`eslint-config-next` + `@typescript-eslint`
+* 使用Prettier格式化，开启`eslint-config-prettier`避免冲突
+* CI中执行`pnpm lint`和`pnpm test`
+
+### 5.3 命名规范
+
+| 类型 | 规范 | 示例 |
+|------|------|------|
+| 组件/类名 | PascalCase | `CourseCard`, `PdfReader`, `AiPanel` |
+| 函数/变量 | camelCase | `fetchCourses`, `handleSubmit` |
+| Hooks | use开头 | `useCourseList`, `useAiExplainPage` |
+| 常量/枚举 | UPPER_SNAKE_CASE | `COURSE_LIMIT`, `AI_QUOTA_BUCKETS` |
+| 组件文件 | kebab-case | `course-card.tsx`, `pdf-reader.tsx` |
+| Hook文件 | use-xxx.ts | `use-course-list.ts` |
+| 类型文件 | *.types.ts | `course.types.ts` |
+
+### 5.4 文件与函数大小
+
+* **单文件**：≤300行，超过时拆分
+* **单函数**：≤50行，保持单一职责
+* **React组件**：只负责一层UI+简单状态，复杂逻辑下沉到hooks/lib
+
+---
+
+## 6. React/Next.js使用约定
+
+### 6.1 组件粒度
+
+* **页面级组件**（page）：只负责路由与业务模块组合
+* **复用型视图**：抽成`features/*/components`
+* **通用组件**：仅在有需要时抽到`/components`
+
+### 6.2 Hooks使用
+
+* 业务数据获取用`useQuery`/`useMutation`，统一封装在`features/*/api`或`features/*/hooks`
+* 避免在组件中直接写`fetch`，统一走封装的API client
+
+### 6.3 服务端/客户端划分
+
+* 默认使用客户端组件（需浏览器交互）
+* 与SEO相关或可SSR的页面再考虑server component
+* Route Handlers只返回JSON，不返回React组件
+
+### 6.4 路由与导航
+
+* 使用App Router（`/app`目录），不使用pages Router
+* 导航使用`next/link` + `useRouter`（仅必要时编程式导航）
+
+---
+
+## 7. 数据访问、错误处理与配额
+
+### 7.1 API封装
+
+**基础封装**（`/lib/api-client.ts`）：
+* 统一处理：`credentials: "include"`、错误码解析、超时
+* **不要**在前端处理/拼接`Authorization`头
+* **不要**把任何token写入localStorage/sessionStorage
+
+**鉴权失败处理**：
+* 401 → 清理前端user状态 + 跳转登录页
+* 必要时调用`/api/auth/logout`触发服务端清Cookie
+
+**AI类接口封装**（`features/ai/api`）：
+```typescript
+// 语义化函数，隐藏底层HTTP细节
+export async function explainPage({ courseId, fileId, page }: ExplainPageParams) {
+  return fetchJson('/api/ai/explain-page', { method: 'POST', body: { courseId, fileId, page } })
+}
+
+export async function explainSelection({ ... }: ExplainSelectionParams) { /* ... */ }
+export async function askQuestion({ ... }: AskQuestionParams) { /* ... */ }
+export async function summarizeDocument({ ... }: SummarizeDocumentParams) { /* ... */ }
+```
+
+### 7.2 与BaaS的交互
+
+* 在server端Route Handlers中使用**Supabase SDK**（Auth + Postgres + Storage）
+* **禁止**前端直接依赖/调用Supabase SDK
+* 前端只感知业务API（`/api/*`），不直接依赖BaaS
+
+### 7.3 错误处理约定
+
+| 错误类型 | HTTP | 前端行为 |
+|---------|------|---------|
+| 鉴权失败 | 401 | 清理状态 + 跳转登录 |
+| 资源不存在 | 404 | 显示"Not found"状态 |
+| 配额触顶 | 429 + `QUOTA_EXCEEDED` | 提示"配额已用尽" + 更新配额状态 |
+| 自动讲解限流 | 429 + `AUTO_EXPLAIN_LIMIT_REACHED` | 仅针对"Explain this page"按钮降级 |
+| 其他错误 | - | 统一toast或错误区域 |
+
+### 7.4 配额检查
+
+**服务端统一检查**：
+* AI类API返回统一错误结构：`code: "QUOTA_EXCEEDED"`, `bucket: "learningInteractions"`, ...
+* "Explain this page"不占用户可见配额，前端根据`rateLimit`字段提示
+
+**LLM调用约定**：
+* AI接口统一由server-side Route Handlers调用OpenAI API
+* OpenAI API Key仅存在服务端环境变量（`OPENAI_API_KEY`）
+* 前端永远只调用`/api/ai/*`
+
+---
+
+## 8. 配额与限流配置管理
+
+### 8.1 配置文件结构
+
+```typescript
+// src/config/quotas.ts
+export const QUOTA_CONFIG = {
+  courses: {
+    limit: parseInt(process.env.COURSE_LIMIT || '6'),
+  },
+  ai: {
+    learningInteractions: {
+      limit: parseInt(process.env.AI_LEARNING_LIMIT || '50'),
+      perCourse: true,
+    },
+    documentSummary: {
+      limit: parseInt(process.env.AI_DOC_SUMMARY_LIMIT || '10'),
+      perCourse: true,
+    },
+    sectionSummary: {
+      limit: parseInt(process.env.AI_SECTION_SUMMARY_LIMIT || '15'),
+      perCourse: true,
+    },
+    courseSummary: {
+      limit: parseInt(process.env.AI_COURSE_SUMMARY_LIMIT || '3'),
+      perCourse: true,
+    },
+  },
+  autoExplain: {
+    perFileDailyLimit: parseInt(process.env.AUTO_EXPLAIN_FILE_DAILY || '20'),
+    maxStickersPerRequest: 6,
+    timezone: 'UTC',
+  },
+} as const
+```
+
+### 8.2 环境变量清单
+
+```bash
+# .env.local
+
+# === Supabase ===
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
+SUPABASE_SERVICE_ROLE_KEY=eyJhbG...  # 仅服务端
+
+# === OpenAI ===
+OPENAI_API_KEY=sk-...
+OPENAI_ORG_ID=org-...  # 可选
+
+# === 配额配置 ===
+COURSE_LIMIT=6
+AI_LEARNING_LIMIT=50
+AI_DOC_SUMMARY_LIMIT=10
+AI_SECTION_SUMMARY_LIMIT=15
+AI_COURSE_SUMMARY_LIMIT=3
+AUTO_EXPLAIN_FILE_DAILY=20
+
+# === 功能开关 ===
+ENABLE_AUTO_EXPLAIN=true
+ENABLE_STREAMING=true
+
+# === 监控 ===
+SENTRY_DSN=https://...  # 可选
+```
+
+---
+
+## 9. UI组件与样式约定
+
+### 9.1 Tailwind使用
+
+* 优先使用Tailwind工具类
+* 复用度高的样式抽成组件或封装为`className`帮助函数
+* 避免JSX中出现过长class串（>1-2行），拆到子组件
+
+### 9.2 AI面板与贴纸组件
+
+**组件拆分**：
+* `AiPanel`：整体容器，上下区域拆分
+* `StickerList`：贴纸列表（自动+手动）
+* `StickerItem`：单条贴纸（折叠/展开、内部滚动）
+* `QaPanel` / `QaHistory` / `QaInput`：问答与总结区
+
+**贴纸组件要求**：
+* 支持`auto`/`manual`两种类型的样式差异（不同背景色/标签）
+* 支持折叠/展开状态（`folded`字段）
+* 内部滚动（`max-height` + `overflow-auto`）
+
+### 9.3 交互细节
+
+* 按钮/链接需有明确的hover/active/disabled状态
+* 所有可点击区域在键盘导航与屏幕阅读器下可用（后续完善a11y）
+* 贴纸与PDF联动通过回调props实现：`onJumpToPage(page, anchorRect?)`
+
+---
+
+## 10. 性能优化与监控
+
+### 10.1 性能基线
+
+| 指标 | 目标值 | 测试条件 |
+|------|--------|---------|
+| PDF首屏(LCP) | <3s (P75) | Fast 3G + 4x CPU throttling |
+| AI首token(TTFB) | <5s (P75) | 从请求到首响应 |
+
+### 10.2 PDF渲染优化
+
+**基础渲染**：
+* 默认分页模式（page-by-page），避免一次性渲染全部
+* 每页独立渲染到Canvas，避免DOM节点过多
+* 使用`react-pdf`懒加载特性
+
+**大型PDF优化（>50页）**：
+* 启用虚拟滚动（`react-window` / `react-virtualized`）
+* 仅渲染可见页 ± 2页
+* 滚动时动态卸载远离视口的页面
+
+**贴纸加载联动**：
+* 初始只请求"当前页 ± 2页"的贴纸
+* 滚动时触发增量加载：
+  ```typescript
+  useEffect(() => {
+    const visiblePages = getVisiblePages()  // [3, 4, 5]
+    const pagesToLoad = expandRange(visiblePages, 2)  // [1-7]
+    const missingPages = pagesToLoad.filter(p => !loadedStickers.has(p))
+    if (missingPages.length > 0) {
+      fetchStickers({ fileId, pages: missingPages })
+    }
+  }, [currentPage])
+  ```
+* 使用React Query的`staleTime`避免重复请求
+
+**缓存策略**：
+* 已渲染Canvas缓存在内存（LRU淘汰）
+* PDF文件通过Service Worker缓存
+* 贴纸数据通过React Query缓存（5分钟staleTime）
+
+### 10.3 AI响应超时处理
+
+* **理想**：使用streaming，首token<2s，逐字显示
+* **超时处理**：
+  * 15s未完成 → 显示"AI正在处理..."+ "取消"按钮
+  * 30s仍未完成 → 自动超时 + 提示"请求超时，请稍后重试"
+
+### 10.4 监控与埋点
+
+**前端监控**（前端至少记录）：
+* AI调用失败基础信息（接口、错误码、耗时）
+* 关键路径埋点（explain-page / explain-selection / qa / summarize-*）
+* 性能指标：
+  ```typescript
+  import { onLCP, onINP, onTTFB } from 'web-vitals'
+  onLCP(console.log)  // Largest Contentful Paint
+  onINP(console.log)  // Interaction to Next Paint
+  onTTFB(console.log) // Time to First Byte
+  ```
+
+**后端监控**（建议集中在`features/ai`）：
+* AI调用日志：userId/courseId/fileId、接口类型、token数、耗时、是否触发配额/限流
+* 贴纸行为：创建、折叠/展开、自动与手动使用比例
+
+---
+
+## 11. AI回复格式渲染（统一）
+
+### 11.1 Markdown渲染组件
+
+**位置**：`/src/components/markdown-renderer.tsx`
+
+**基于**：
+* `react-markdown`：Markdown解析
+* `remark-math` + `remark-gfm`：数学公式+GitHub风格
+* `rehype-katex`：LaTeX渲染
+* `prism-react-renderer`：代码高亮
+
+**全局导入**：
+```typescript
+// app/layout.tsx
+import 'katex/dist/katex.min.css'
+```
+
+### 11.2 LaTeX数学公式
+
+* **行内**：`$...$` 或 `\(...\)`
+* **块级**：`$$...$$` 或 `\[...\]`
+* 使用KaTeX渲染，要求AI回复中公式语法符合KaTeX能力范围
+
+### 11.3 代码语法高亮
+
+* 使用`prism-react-renderer`，主题：`vsLight`或类似浅色主题
+* 代码块：三反引号+语言标记（` ```python`、` ```javascript`等）
+* 行内代码：单反引号，渲染为等宽字体+浅背景
+
+### 11.4 使用约定
+
+**所有AI相关展示统一使用`MarkdownRenderer`**：
+* 自动讲解贴纸（Explain this page）
+* 选中文本讲解贴纸（From selection / 追问链）
+* 基于当前PDF的问答回答
+* 文档总结 / 章节总结 / 课程级提纲
+
+**约束**：
+* 不直接渲染`innerHTML`
+* 接收后端返回的**纯文本Markdown字符串**
+* 若新增AI能力，优先复用或扩展该组件
+* 与01/03文档中"AI文本格式约定"保持一致
+
+---
+
+## 12. 国际化（i18n）准备
+
+* MVP不做多语言切换
+* 用户可见文案集中管理（`/config/texts.ts`或简单i18n文件）
+* 避免在多个组件中重复硬编码相同文案
+
+---
+
+> **本规范为MVP阶段基线**。后续如团队规模或功能复杂度上升，可在此基础上补充更细致的组件设计规范、更严格的测试覆盖率目标，但应始终保持与01 PRD / 03 API文档的设计一致。

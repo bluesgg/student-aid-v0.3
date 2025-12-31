@@ -58,3 +58,4 @@ export async function resendConfirmation(
   return api.post<ResendConfirmationResponse>("/api/auth/resend-confirmation", data);
 }
 
+

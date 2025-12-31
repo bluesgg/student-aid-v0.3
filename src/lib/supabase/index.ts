@@ -8,3 +8,4 @@ export { supabaseConfig, validateSupabaseEnv } from "./env";
 export { createServerSupabaseClient, getServerUser, getServerSession } from "./server";
 export { createMiddlewareSupabaseClient } from "./middleware";
 
+
