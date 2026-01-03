@@ -298,3 +298,6 @@ function CourseCard({ course }: { course: Course }) {
 }
 
 
+
+
+
