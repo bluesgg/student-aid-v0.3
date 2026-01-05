@@ -229,7 +229,8 @@
 │ Course outlines:            3 / 15   █░░░░ │
 │ Auto-explain:             145 / 300  ████░ │
 │                                             │
-│ Resets at: 2025-02-01 00:00 UTC             │
+│ Resets on: Every 7th at 00:00 UTC          │
+│ (根据你的9/7注册日期)                    │
 └─────────────────────────────────────────────┘
 ```
 
@@ -237,7 +238,7 @@
 
 **说明文案**：
 * "All AI quotas are shared across all your courses."
-* "All quotas reset monthly on the 1st at 00:00 UTC."
+* "Quotas reset monthly based on your registration date (e.g., if you registered on the 7th, quotas reset on the 7th of each month)."
 
 ---
 

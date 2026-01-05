@@ -748,36 +748,80 @@ export async function getUserQuotaLimit(userId: string, bucket: string): Promise
 
 **定时任务调度**（配额重置、数据清理）：
 
-所有配额每月1号重置需要Cron Job实现：
+配额按注册日期周期重置需要每天运行Cron Job：
 
 ```typescript
 // scripts/reset-monthly-quota.ts
 export async function resetMonthlyQuota() {
-  const firstOfMonth = new Date()
-  firstOfMonth.setUTCDate(1)
-  firstOfMonth.setUTCHours(0, 0, 0, 0)
+  const now = new Date()
+  const todayDay = now.getUTCDate()  // 今天是几号
   
-  // 重置所有AI配额
-  await db.quota.updateMany({
+  // 查找所有注册日期为今天的用户
+  const users = await db.user.findMany({
     where: {
-      resetAt: { lt: new Date() }
+      // 提取created_at的日期部分与todayDay匹配
+      // 使用SQL: EXTRACT(DAY FROM created_at) = todayDay
     },
-    data: {
-      used: 0,
-      resetAt: new Date(firstOfMonth.setMonth(firstOfMonth.getMonth() + 1))
-    }
+    select: { id: true, createdAt: true }
   })
   
-  console.log(`[Cron] Reset all quotas for ${firstOfMonth.toISOString().split('T')[0]}`)
+  for (const user of users) {
+    const registrationDay = new Date(user.createdAt).getUTCDate()
+    
+    if (registrationDay === todayDay) {
+      // 重置该用户的所有配额
+      await db.quota.updateMany({
+        where: { userId: user.id },
+        data: {
+          used: 0,
+          resetAt: calculateNextResetDate(user.createdAt)
+        }
+      })
+    }
+  }
+  
+  console.log(`[Cron] Reset quotas for ${users.length} users (registration day: ${todayDay})`)
+}
+
+// 计算下次重置日期
+function calculateNextResetDate(registrationDate: Date): Date {
+  const registrationDay = new Date(registrationDate).getUTCDate()
+  const now = new Date()
+  const nextReset = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth() + 1,  // 下个月
+    registrationDay,
+    0, 0, 0, 0
+  ))
+  
+  // 处理边界情况：如果注册日昨31号,但下个月只有30天
+  if (nextReset.getUTCDate() !== registrationDay) {
+    // 设置为下个月的最后一天
+    nextReset.setUTCDate(0)
+  }
+  
+  return nextReset
 }
 
 // vercel.json
 {
   "crons": [{
     "path": "/api/cron/reset-monthly-quota",
-    "schedule": "0 0 1 * *"  // 每月1号00:00 UTC
+    "schedule": "0 0 * * *"  // 每天00:00 UTC运行,检查注册日匹配的用户
   }]
 }
+```
+
+**重置逻辑说明**：
+* Cron Job每天00:00 UTC运行
+* 检查今天是几号(例如7号)
+* 查找所有在X月7号注册的用户
+* 重置这些用户的配额为0
+* 计算下次重置日期(下个月7号)
+
+**边界情况处理**：
+* 用户29/30/31号注册,但某些月份没有这一天
+* 解决：使用该月的最后一天重置(例如2月28/29号)
 ```
 
 **审计日志定期清理**：

@@ -375,7 +375,7 @@ def hello():
 }
 ```
 
-**限流规则**：300次/账户/月,每月1号00:00 UTC重置(需Cron Job实现,见04_TECH §13.1)
+**限流规则**：300次/账户/月,按注册日期周期重置(例如9月7号注册,则每月7号00:00 UTC重置;需Cron Job实现,见04_TECH §13.1)
 
 **缓存检查**：
 1. 查询数据库是否已有(userId,fileId,page)的自动贴纸
@@ -402,7 +402,7 @@ def hello():
       }
     ],
     "quota": {
-      "autoExplain": { "used": 146, "limit": 300, "resetAt": "2025-02-01T00:00:00Z" }
+      "autoExplain": { "used": 146, "limit": 300, "resetAt": "2025-02-07T00:00:00Z" }  // 根据9/7注册日期
     }
   }
 }
@@ -536,15 +536,15 @@ def hello():
   "data": {
     "courses": { "used": 4, "limit": 6 },
     "ai": {
-      "learningInteractions": { "used": 87, "limit": 150, "resetAt": "2025-02-01T00:00:00Z" },
-      "documentSummary": { "used": 23, "limit": 100, "resetAt": "2025-02-01T00:00:00Z" },
-      "sectionSummary": { "used": 15, "limit": 65, "resetAt": "2025-02-01T00:00:00Z" },
-      "courseSummary": { "used": 3, "limit": 15, "resetAt": "2025-02-01T00:00:00Z" }
+      "learningInteractions": { "used": 87, "limit": 150, "resetAt": "2025-02-07T00:00:00Z" },
+      "documentSummary": { "used": 23, "limit": 100, "resetAt": "2025-02-07T00:00:00Z" },
+      "sectionSummary": { "used": 15, "limit": 65, "resetAt": "2025-02-07T00:00:00Z" },
+      "courseSummary": { "used": 3, "limit": 15, "resetAt": "2025-02-07T00:00:00Z" }
     },
     "autoExplain": {
       "used": 145,
       "limit": 300,
-      "resetAt": "2025-02-01T00:00:00Z"
+      "resetAt": "2025-02-07T00:00:00Z"  // 根据用户注册日期(9/7)计算
     }
   }
 }
