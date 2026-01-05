@@ -1,6 +1,7 @@
-# 04 技术与代码规范(精简版)
+# 04 技术与代码规范
 
 > **文档定位**：技术栈、代码规范与实现约束;业务需求见01,API契约见03。
+> **版本状态**：✅ 冻结 - 基于审计修正的最终版本
 
 ---
 
@@ -56,6 +57,8 @@
 
 **Streaming配置**：启用接口:explain-page/explain-selection/qa;目标:首token延迟<2s,完整响应<10s
 
+**注意**：Streaming模式下`usage`字段在final chunk中返回,需累积chunks或等待stream结束获取token统计
+
 ### 2.3 PDF处理
 
 **前端渲染**：`react-pdf`^7.7.0 + `pdfjs-dist`^3.11.174
@@ -65,8 +68,9 @@
 **扫描件检测逻辑**：
 ```typescript
 export async function detectScannedPdf(buffer: Buffer): Promise<boolean> {
-  const data = await pdf(buffer, { max: 3 })  // 只解析前3页
-  const avgCharsPerPage = data.text.length / Math.min(data.numpages, 3)
+  const data = await pdf(buffer)
+  const firstPages = Math.min(data.numpages, 3)
+  const avgCharsPerPage = data.text.length / firstPages
   return avgCharsPerPage < 50  // <50字符/页视为扫描件
 }
 ```
@@ -88,6 +92,18 @@ export async function detectScannedPdf(buffer: Buffer): Promise<boolean> {
 
 **注意**：KaTeX CSS需全局导入:`import 'katex/dist/katex.min.css'`
 
+### 2.5 虚拟滚动(大型PDF优化)
+
+```json
+{
+  "dependencies": {
+    "react-window": "^1.8.10"
+  }
+}
+```
+
+**用途**：大型PDF(>50页)使用虚拟滚动,仅渲染可见页±2
+
 ---
 
 ## 3. Supabase集成方式(Server-Side Auth)
@@ -95,13 +111,13 @@ export async function detectScannedPdf(buffer: Buffer): Promise<boolean> {
 ### 3.1 认证流程架构
 
 **采用**：Supabase Server-Side Auth
-* Supabase签发JWT(access token 1h + refresh token 7d)
+* Supabase签发JWT(access token 1h + refresh token 30d)
 * 通过`@supabase/ssr`将token存储在**httpOnly cookie**中
 * Next.js middleware和Route Handlers中使用`createServerClient`读取cookie并自动刷新token
 
 **Cookie配置**：
 * 名称：`sb-<project-ref>-auth-token`(Supabase自动生成)
-* 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=604800`
+* 属性：`HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=2592000`
 * 前端约束:无需(也不应该)手动操作此cookie
 
 ### 3.2 服务端Client创建
@@ -119,8 +135,8 @@ export function createClient() {
     {
       cookies: {
         get(name) { return cookieStore.get(name)?.value },
-        set(name, value, options) { cookieStore.set({ name, value, ...options }) },
-        remove(name, options) { cookieStore.set({ name, value: '', ...options }) },
+        set(name, value, options) { cookieStore.set(name, value, options) },
+        remove(name, options) { cookieStore.set(name, '', options) },
       },
     }
   )
@@ -130,11 +146,11 @@ export function createClient() {
 ### 3.3 Middleware中的会话刷新
 
 **关键逻辑**：
-* 尝试获取用户并自动刷新session:`await supabase.auth.getUser()`
+* 尝试获取session并自动刷新：`await supabase.auth.getSession()`
 * 认证失败时：
   * API请求→返回401(排除公开端点:/api/auth/login等)
   * 页面请求→重定向到`/login?error=session_expired`(排除公开页面:/login等)
-* Supabase服务异常→记录错误但允许请求通过(降级策略)
+* Supabase服务异常→记录错误并返回503(不允许未认证访问)
 
 **配置需要鉴权的路径**：
 ```typescript
@@ -151,7 +167,7 @@ export const config = {
 
 * 调用`/api/*`时使用`credentials: 'include'`
 * 浏览器自动携带httpOnly cookie
-* **禁止**在前端读取/存储token(不用localStorage/sessionStorage)
+* **禁止**在前端读取/存储token(不用localStorage/sessionStorage存储token)
 
 ---
 
@@ -169,8 +185,9 @@ export const config = {
     /auth               # 登录/注册表单与hooks
     /courses            # 课程列表、卡片、创建/删除
     /files              # PDF列表、上传
-    /reader             # PDF阅读器(左侧)
-    /ai                 # AI面板、贴纸、问答、总结(右侧)
+    /reader             # PDF阅读器(左侧,40-50%宽度)
+    /stickers           # 贴纸栏(中栏,25-30%宽度)
+    /qa                 # 问答与总结区(右栏,25-30%宽度)
     /usage              # 配额展示
   /lib                  # 通用工具函数、API封装、BaaS SDK封装
   /types                # 全局类型定义:User,Course,File,Sticker,...
@@ -283,6 +300,7 @@ async function logout() {
     console.warn('[Logout] Request failed, clearing local state anyway:', err)
   } finally {
     queryClient.clear()
+    // 清理所有本地数据(包括非token的UI偏好等)
     localStorage.clear()
     sessionStorage.clear()
     router.push('/login')
@@ -298,6 +316,8 @@ async function logout() {
 
 ### 8.1 配置文件结构
 
+配额数值定义见01_PRD §3.1
+
 ```typescript
 // src/config/quotas.ts
 export const QUOTA_CONFIG = {
@@ -305,13 +325,15 @@ export const QUOTA_CONFIG = {
     limit: parseInt(process.env.COURSE_LIMIT || '6'),
   },
   ai: {
-    learningInteractions: { limit: 150, perAccount: true },
-    documentSummary: { limit: 100, perAccount: true },
-    sectionSummary: { limit: 65, perAccount: true },
-    courseSummary: { limit: 15, perAccount: true },
+    learningInteractions: { limit: 150, perAccount: true, resetMonthly: true },
+    documentSummary: { limit: 100, perAccount: true, resetMonthly: true },
+    sectionSummary: { limit: 65, perAccount: true, resetMonthly: true },
+    courseSummary: { limit: 15, perAccount: true, resetMonthly: true },
   },
   autoExplain: {
-    perAccountDailyLimit: parseInt(process.env.AUTO_EXPLAIN_DAILY || '300'),
+    limit: parseInt(process.env.AUTO_EXPLAIN_MONTHLY || '300'),
+    perAccount: true,
+    resetMonthly: true,
     maxStickersPerRequest: 6,
     timezone: 'UTC',
   },
@@ -336,11 +358,14 @@ AI_LEARNING_LIMIT=150
 AI_DOC_SUMMARY_LIMIT=100
 AI_SECTION_SUMMARY_LIMIT=65
 AI_COURSE_SUMMARY_LIMIT=15
-AUTO_EXPLAIN_DAILY=300
+AUTO_EXPLAIN_MONTHLY=300
 
 # === 功能开关 ===
 ENABLE_AUTO_EXPLAIN=true
 ENABLE_STREAMING=true
+
+# === 构建版本 ===
+NEXT_PUBLIC_BUILD_VERSION=v1.0.0
 ```
 
 ---
@@ -349,124 +374,101 @@ ENABLE_STREAMING=true
 
 ### 9.1 Tailwind使用
 
-* 优先使用Tailwind工具类
-* 复用度高的样式抽成组件或封装为`className`帮助函数
-* 避免JSX中出现过长class串(>1-2行),拆到子组件
+* 优先使用Tailwind utility classes
+* 复杂样式抽成`@layer components`
+* 避免内联style(除非动态计算)
 
-### 9.2 AI面板与贴纸组件
+### 9.2 关键组件
 
-**组件拆分**：
-* `AiPanel`：整体容器,上下区域拆分
-* `StickerList`：贴纸列表(自动+手动)
-* `StickerItem`：单条贴纸(折叠/展开、内部滚动)
-* `QaPanel` / `QaHistory` / `QaInput`：问答与总结区
+* `CourseCard`：课程卡片
+* `FileList`：文件列表(按类型分组)
+* `PdfViewer`：PDF阅读器(左侧,40-50%宽度)
+* `StickerPanel`：贴纸栏(中栏,25-30%宽度,包含自动+手动贴纸)
+* `QaPanel`：问答与总结区(右栏,25-30%宽度)
+* `QuotaDisplay`：配额展示
 
-**贴纸组件要求**：
-* 支持`auto`/`manual`两种类型的样式差异(不同背景色/标签)
-* 支持折叠/展开状态(`folded`字段)
-* 内部滚动(`max-height` + `overflow-auto`)
+**P5页面布局**：采用左中右三栏结构,PDF阅读器、贴纸栏、问答区物理分离,提升空间利用和视觉清晰度
 
 ---
 
-## 10. 性能优化与监控
+## 10. 性能优化策略
+
+性能目标见01_PRD §4.1
 
 ### 10.1 性能基线
 
-| 指标 | 目标值 | 测试条件 |
-|------|--------|---------|
-| PDF首屏(LCP) | <3s (P75) | Fast 3G + 4x CPU throttling |
+| 指标 | 目标值(P75) | 说明 |
+|------|------------|------|
+| PDF首屏(LCP) | <3s | 从导航到首页可见 |
+| 翻页响应 | <100ms(P90) | 点击翻页到渲染完成 |
 | AI首token(TTFB) | <5s (P75) | 从请求到首响应 |
+| AI完整响应 | <15s (P90) | 完整内容返回 |
 
-### 10.2 PDF渲染优化
-
-**基础渲染**：
-* 默认分页模式(page-by-page),避免一次性渲染全部
-* 每页独立渲染到Canvas,避免DOM节点过多
-* 使用`react-pdf`懒加载特性
+### 10.2 PDF优化
 
 **大型PDF优化(>50页)**：
-* 启用虚拟滚动(`react-window` / `react-virtualized`)
-* 仅渲染可见页±2页
-* 滚动时动态卸载远离视口的页面
+* 使用`react-window`虚拟滚动
+* 仅渲染可见页±2
+* 懒加载页面Canvas
 
-**贴纸加载联动**：
-* 初始只请求"当前页±2页"的贴纸
-* 滚动时触发增量加载
+**中小型PDF**：
+* 预加载相邻页
 * 使用React Query的`staleTime`避免重复请求
 
-**缓存策略**：
-* 已渲染Canvas缓存在内存(LRU淘汰)
-* PDF文件通过Service Worker缓存
-* 贴纸数据通过React Query缓存(5分钟staleTime)
+### 10.3 AI响应优化
 
-### 10.3 AI响应超时处理
-
+**Streaming处理**：
 * **理想**：使用streaming,首token<2s,逐字显示
-* **超时处理**：
-  * 15s未完成→显示"AI正在处理..."+「取消」按钮
+* **降级**：
+  * 15s未完成→显示"AI正在处理,请稍候..." + [取消]按钮
   * 30s仍未完成→自动超时+提示"请求超时,请稍后重试"
 
-**取消操作实现**：
-```typescript
-const abortControllerRef = useRef<AbortController | null>(null)
-
-async function explainPage(params) {
-  abortControllerRef.current = new AbortController()
-  
-  try {
-    const response = await fetch('/api/ai/explain-page', {
-      method: 'POST',
-      signal: abortControllerRef.current.signal,
-      // ...
-    })
-  } catch (err) {
-    if (err.name === 'AbortError') {
-      console.log('[AI] Request cancelled by user')
-    } else {
-      throw err
-    }
-  }
-}
-
-function cancelRequest() {
-  abortControllerRef.current?.abort()
-}
-```
-
-**配额处理规则**：Streaming已开始(`hasReceivedFirstToken === true`)→配额已扣除,不退还;Streaming未开始→配额未扣除
+**配额处理规则**：
+* Streaming已返回首token→配额已扣除,不退还
+* Streaming连接断开但未返回首token→配额未扣除
 
 ---
 
-## 11. AI回复格式渲染(统一)
+## 11. MarkdownRenderer组件
 
-### 11.1 Markdown渲染组件
+AI文本格式规范见03_API §3.0.3
 
-**位置**：`/src/components/markdown-renderer.tsx`
+```typescript
+// components/MarkdownRenderer.tsx
+import ReactMarkdown from 'react-markdown'
+import remarkMath from 'remark-math'
+import remarkGfm from 'remark-gfm'
+import rehypeKatex from 'rehype-katex'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 
-**基于**：
-* `react-markdown`：Markdown解析
-* `remark-math` + `remark-gfm`：数学公式+GitHub风格
-* `rehype-katex`：LaTeX渲染
-* `prism-react-renderer`：代码高亮
+export function MarkdownRenderer({ content }: { content: string }) {
+  return (
+    <ReactMarkdown
+      remarkPlugins={[remarkMath, remarkGfm]}
+      rehypePlugins={[rehypeKatex]}
+      components={{
+        code({ node, inline, className, children, ...props }) {
+          const match = /language-(\w+)/.exec(className || '')
+          return !inline && match ? (
+            <SyntaxHighlighter language={match[1]} {...props}>
+              {String(children).replace(/\n$/, '')}
+            </SyntaxHighlighter>
+          ) : (
+            <code className={className} {...props}>
+              {children}
+            </code>
+          )
+        }
+      }}
+    >
+      {content}
+    </ReactMarkdown>
+  )
+}
+```
 
-**全局导入**：`import 'katex/dist/katex.min.css'` (in app/layout.tsx)
-
-### 11.2 LaTeX数学公式
-
-* 行内：`$...$`或`\(...\)`
-* 块级：`$$...$$`或`\[...\]`
-* 使用KaTeX渲染,要求AI回复中公式语法符合KaTeX能力范围
-
-### 11.3 使用约定
-
-**所有AI相关展示统一使用`MarkdownRenderer`**：
-* 自动讲解贴纸(Explain this page)
-* 选中文本讲解贴纸(From selection/追问链)
-* 基于当前PDF的问答回答
-* 文档总结/章节总结/课程级提纲
-
-**约束**：
-* 不直接渲染`innerHTML`
+**使用约定**：
+* 所有AI返回的`contentMarkdown`统一使用此组件渲染
 * 接收后端返回的**纯文本Markdown字符串**
 * 若新增AI能力,优先复用或扩展该组件
 
@@ -482,7 +484,9 @@ function cancelRequest() {
 
 ## 13. 数据收集实施
 
-### 13.1 建议收集字段（可选实施）
+数据收集规范见01_PRD §2.6
+
+### 13.1 建议收集字段(可选实施)
 
 **轻量行为数据**（在`files`表添加）：
 ```sql
@@ -510,6 +514,8 @@ export async function calculatePdfHash(buffer: Buffer): Promise<string> {
 
 **设备与客户端状态**（安全、兼容性、排错）：
 
+**注意**：使用TanStack Query的全局配置添加client version header,避免覆盖window.fetch
+
 ```typescript
 // lib/client-info.ts
 import { UAParser } from 'ua-parser-js'
@@ -519,40 +525,20 @@ export function parseClientInfo(req: Request) {
   const parser = new UAParser(userAgent)
   
   return {
-    browserName: parser.getBrowser().name,      // "Chrome", "Firefox", "Safari"
-    browserVersion: parser.getBrowser().version, // "120.0.0"
-    deviceType: parser.getDevice().type || 'desktop', // "desktop", "tablet"
-    osName: parser.getOS().name,                // "Windows", "macOS"
+    browserName: parser.getBrowser().name,
+    browserVersion: parser.getBrowser().version,
+    deviceType: parser.getDevice().type || 'desktop',
+    osName: parser.getOS().name,
     clientVersion: req.headers.get('x-client-version') || 'unknown'
   }
-}
-
-// 前端发送client version
-// app/layout.tsx
-export default function RootLayout({ children }) {
-  useEffect(() => {
-    // 在所有API请求中添加client version header
-    const originalFetch = window.fetch
-    window.fetch = (url, options = {}) => {
-      return originalFetch(url, {
-        ...options,
-        headers: {
-          ...options.headers,
-          'X-Client-Version': process.env.NEXT_PUBLIC_BUILD_VERSION || 'dev'
-        }
-      })
-    }
-  }, [])
-  
-  return <html>{children}</html>
 }
 ```
 
 **用户时区与本地化**：
 ```typescript
 // 前端获取用户时区
-const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone  // "America/New_York"
-const userLocale = navigator.language  // "en-US"
+const userTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone
+const userLocale = navigator.language
 
 // 用于显示配额重置倒计时（本地时间）
 function formatResetTime(resetAtUTC: string, userTimezone: string) {
@@ -562,45 +548,7 @@ function formatResetTime(resetAtUTC: string, userTimezone: string) {
     minute: '2-digit'
   })
 }
-
-// 示例：显示"Resets at 7:00 PM (your local time)"而非"00:00 UTC"
 ```
-
-**存储位置**（可选）：
-```sql
--- 在sessions或audit_logs表中记录（不在users表）
-CREATE TABLE client_sessions (
-  id UUID PRIMARY KEY,
-  user_id UUID REFERENCES auth.users(id),
-  browser_name VARCHAR(50),
-  browser_version VARCHAR(20),
-  device_type VARCHAR(20),
-  os_name VARCHAR(50),
-  client_version VARCHAR(20),
-  locale VARCHAR(10),
-  timezone VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW(),
-  last_active_at TIMESTAMP DEFAULT NOW()
-);
-
--- 或仅在错误日志中记录
-CREATE TABLE error_logs (
-  id UUID PRIMARY KEY,
-  user_id UUID,
-  error_type VARCHAR(100),
-  error_message TEXT,
-  client_info JSONB,  -- { browserName, browserVersion, deviceType, clientVersion }
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-**用途说明**：
-- `browserName/Version`: 兼容性测试、排查浏览器特定bug
-- `deviceType`: 优化移动端体验（虽然MVP不做专门适配）
-- `locale/timezone`: 用户本地化显示（如倒计时、日期格式）
-- `clientVersion`: 快速定位问题版本、支持回滚决策
-
-**不用于**：广告追踪、设备指纹、用户画像
 
 **安全与审计数据**（账号安全、风控、事故追溯）：
 
@@ -608,20 +556,16 @@ CREATE TABLE error_logs (
 -- 登录与关键动作审计表
 CREATE TABLE audit_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,  -- 允许NULL（注册失败等）
-  event_type VARCHAR(50) NOT NULL,  -- login_success, login_failed, logout, password_reset, etc.
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  event_type VARCHAR(50) NOT NULL,
   ip_prefix VARCHAR(20),  -- 仅存储/24前缀或hash，不存完整IP
   user_agent VARCHAR(255),
-  request_id VARCHAR(50),  -- 链路追踪ID
-  metadata JSONB,  -- 额外上下文，如失败原因、重置邮箱等
+  request_id VARCHAR(50),
+  metadata JSONB,
   created_at TIMESTAMP DEFAULT NOW()
 );
 
--- 索引优化查询
-CREATE INDEX idx_audit_logs_user_event ON audit_logs(user_id, event_type, created_at DESC);
-CREATE INDEX idx_audit_logs_created_at ON audit_logs(created_at);  -- 用于定期清理
-
--- 会话安全信号（在users表或单独表）
+-- 会话安全信号
 CREATE TABLE user_security (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   last_login_at TIMESTAMP,
@@ -630,7 +574,7 @@ CREATE TABLE user_security (
   last_failed_at TIMESTAMP,
   is_rate_limited BOOLEAN DEFAULT FALSE,
   rate_limit_until TIMESTAMP,
-  risk_flags JSONB,  -- { "multiple_failed_logins": true, "unusual_location": false }
+  risk_flags JSONB,
   updated_at TIMESTAMP DEFAULT NOW()
 );
 ```
@@ -644,193 +588,29 @@ export function sanitizeIP(ip: string): string {
   // 方案1: 仅保留/24前缀（推荐）
   const parts = ip.split('.')
   if (parts.length === 4) {
-    return `${parts[0]}.${parts[1]}.${parts[2]}.0`  // 192.168.1.0
+    return `${parts[0]}.${parts[1]}.${parts[2]}.0`
   }
   
   // 方案2: Hash处理（更强隐私）
   return crypto.createHash('sha256').update(ip).digest('hex').substring(0, 16)
 }
-
-// 使用示例
-const clientIP = req.headers.get('x-forwarded-for')?.split(',')[0] || req.ip
-const ipPrefix = sanitizeIP(clientIP)
 ```
 
-**登录审计实现**：
-```typescript
-// lib/security/audit-log.ts
-export async function logAuditEvent(event: {
-  userId?: string
-  eventType: 'login_success' | 'login_failed' | 'logout' | 'password_reset' | 
-             'resend_confirmation' | 'email_verified' | 'account_deleted'
-  ipAddress?: string
-  userAgent?: string
-  requestId?: string
-  metadata?: Record<string, any>
-}) {
-  await db.auditLog.create({
-    data: {
-      userId: event.userId,
-      eventType: event.eventType,
-      ipPrefix: event.ipAddress ? sanitizeIP(event.ipAddress) : null,
-      userAgent: event.userAgent?.substring(0, 255),  // 截断防止过长
-      requestId: event.requestId,
-      metadata: event.metadata,
-      createdAt: new Date()
-    }
-  })
-}
+**运行监控与成本核算数据**（稳定性、成本控制）：
 
-// 使用示例
-// POST /api/auth/login
-export async function POST(req: Request) {
-  const { email, password } = await req.json()
-  const requestId = req.headers.get('x-request-id') || crypto.randomUUID()
-  
-  try {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    
-    if (error) {
-      // 记录失败
-      await logAuditEvent({
-        eventType: 'login_failed',
-        ipAddress: req.headers.get('x-forwarded-for'),
-        userAgent: req.headers.get('user-agent'),
-        requestId,
-        metadata: { email, reason: error.message }
-      })
-      
-      // 更新失败计数
-      await incrementFailedLoginCount(email)
-      
-      return NextResponse.json({ ok: false, error: 'INVALID_CREDENTIALS' }, { status: 401 })
-    }
-    
-    // 记录成功
-    await logAuditEvent({
-      userId: data.user.id,
-      eventType: 'login_success',
-      ipAddress: req.headers.get('x-forwarded-for'),
-      userAgent: req.headers.get('user-agent'),
-      requestId
-    })
-    
-    // 重置失败计数
-    await resetFailedLoginCount(data.user.id)
-    
-    return NextResponse.json({ ok: true, data: { user: data.user } })
-  } catch (err) {
-    // 记录异常
-    await logAuditEvent({
-      eventType: 'login_failed',
-      ipAddress: req.headers.get('x-forwarded-for'),
-      requestId,
-      metadata: { email, error: String(err) }
-    })
-    throw err
-  }
-}
-```
-
-**会话安全信号更新**：
-```typescript
-// lib/security/session-security.ts
-export async function incrementFailedLoginCount(email: string) {
-  const user = await db.user.findUnique({ where: { email } })
-  if (!user) return
-  
-  const security = await db.userSecurity.upsert({
-    where: { userId: user.id },
-    create: {
-      userId: user.id,
-      failedLoginCount: 1,
-      lastFailedAt: new Date()
-    },
-    update: {
-      failedLoginCount: { increment: 1 },
-      lastFailedAt: new Date()
-    }
-  })
-  
-  // 触发限流（5次失败）
-  if (security.failedLoginCount >= 5) {
-    await db.userSecurity.update({
-      where: { userId: user.id },
-      data: {
-        isRateLimited: true,
-        rateLimitUntil: new Date(Date.now() + 15 * 60 * 1000),  // 15分钟
-        riskFlags: { multiple_failed_logins: true }
-      }
-    })
-  }
-}
-
-export async function resetFailedLoginCount(userId: string) {
-  await db.userSecurity.upsert({
-    where: { userId },
-    create: {
-      userId,
-      lastLoginAt: new Date(),
-      failedLoginCount: 0
-    },
-    update: {
-      lastLoginAt: new Date(),
-      failedLoginCount: 0,
-      isRateLimited: false,
-      rateLimitUntil: null,
-      riskFlags: {}
-    }
-  })
-}
-```
-
-**审计日志定期清理**（Cron Job）：
-```typescript
-// scripts/cleanup-audit-logs.ts
-export async function cleanupOldAuditLogs(retentionDays: number = 90) {
-  const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
-  
-  const result = await db.auditLog.deleteMany({
-    where: {
-      createdAt: { lt: cutoffDate }
-    }
-  })
-  
-  console.log(`[Cleanup] Deleted ${result.count} audit logs older than ${retentionDays} days`)
-}
-
-// 每日运行（Vercel Cron或GitHub Actions）
-// vercel.json
-{
-  "crons": [{
-    "path": "/api/cron/cleanup-audit-logs",
-    "schedule": "0 2 * * *"  // 每天凌晨2点UTC
-  }]
-}
-```
-
-**用途说明**：
-- `audit_logs`: 事故追溯、安全分析、检测异常行为
-- `user_security`: 实时风控、防暴力破解、账号保护
-- `ip_prefix`: 检测异常登录位置（不侵犯隐私）
-- `request_id`: 链路追踪、关联前后端日志
-
-**留存期**: 30-90天，定期自动清理，不长期保存
-
-
-**运行监控与成本核算数据**（稳定性、成本控制、限流优化）：
+**注意**：请求日志应在Route Handler中记录,middleware运行在Edge Runtime不支持数据库连接
 
 ```sql
--- API请求日志表
+-- API请求日志表（在Route Handler中记录）
 CREATE TABLE request_logs (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   request_id VARCHAR(50) NOT NULL,
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
-  endpoint VARCHAR(100) NOT NULL,  -- /api/ai/explain-page
-  method VARCHAR(10),  -- POST, GET
+  endpoint VARCHAR(100) NOT NULL,
+  method VARCHAR(10),
   status_code INT,
   latency_ms INT,
-  error_code VARCHAR(50),  -- QUOTA_EXCEEDED, SERVICE_UNAVAILABLE
+  error_code VARCHAR(50),
   created_at TIMESTAMP DEFAULT NOW()
 );
 
@@ -841,64 +621,16 @@ CREATE TABLE ai_usage_logs (
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   course_id UUID,
   file_id UUID,
-  operation_type VARCHAR(50),  -- explain-page, explain-selection, qa, summarize-*
-  model VARCHAR(50),  -- gpt-4-turbo-preview, gpt-4, gpt-3.5-turbo-16k
+  operation_type VARCHAR(50),
+  model VARCHAR(50),
   input_tokens INT,
   output_tokens INT,
-  cost_usd_approx DECIMAL(10, 6),  -- 0.001234
+  cost_usd_approx DECIMAL(10, 6),
   latency_ms INT,
   success BOOLEAN,
   error_code VARCHAR(50),
   created_at TIMESTAMP DEFAULT NOW()
 );
-
--- 客户端性能指标表（聚合数据）
-CREATE TABLE client_performance_metrics (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  user_id UUID,
-  metric_type VARCHAR(50),  -- pdf_lcp, pdf_ttfb, ai_ttfb
-  value_ms INT,
-  page_url VARCHAR(255),
-  client_version VARCHAR(20),
-  browser_name VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW()
-);
-
--- 索引优化
-CREATE INDEX idx_request_logs_endpoint ON request_logs(endpoint, created_at DESC);
-CREATE INDEX idx_ai_usage_logs_user ON ai_usage_logs(user_id, created_at DESC);
-CREATE INDEX idx_ai_usage_logs_model ON ai_usage_logs(model, created_at DESC);
-```
-
-**请求日志中间件**：
-```typescript
-// middleware/request-logger.ts
-import { NextRequest, NextResponse } from 'next/server'
-import crypto from 'crypto'
-
-export async function logRequest(req: NextRequest, res: NextResponse) {
-  const requestId = req.headers.get('x-request-id') || crypto.randomUUID()
-  const startTime = Date.now()
-  
-  // 等待响应完成
-  const latencyMs = Date.now() - startTime
-  
-  // 记录请求日志
-  await db.requestLog.create({
-    data: {
-      requestId,
-      userId: req.user?.id,  // 从middleware获取
-      endpoint: req.nextUrl.pathname,
-      method: req.method,
-      statusCode: res.status,
-      latencyMs,
-      errorCode: res.headers.get('x-error-code') || null,
-      createdAt: new Date()
-    }
-  })
-  
-  return res
-}
 ```
 
 **AI成本追踪**：
@@ -938,345 +670,37 @@ export async function trackAIUsage(params: {
   
   return costUsd
 }
-
-// 使用示例
-// POST /api/ai/explain-page
-export async function POST(req: Request) {
-  const requestId = req.headers.get('x-request-id')
-  const startTime = Date.now()
-  
-  try {
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [/* ... */]
-    })
-    
-    // 追踪成本
-    await trackAIUsage({
-      requestId,
-      userId: user.id,
-      courseId: params.courseId,
-      fileId: params.fileId,
-      operationType: 'explain-page',
-      model: 'gpt-4-turbo-preview',
-      inputTokens: response.usage.prompt_tokens,
-      outputTokens: response.usage.completion_tokens,
-      latencyMs: Date.now() - startTime,
-      success: true
-    })
-    
-    return NextResponse.json({ ok: true, data: response })
-  } catch (err) {
-    // 追踪失败
-    await trackAIUsage({
-      requestId,
-      userId: user.id,
-      operationType: 'explain-page',
-      model: 'gpt-4-turbo-preview',
-      inputTokens: 0,
-      outputTokens: 0,
-      latencyMs: Date.now() - startTime,
-      success: false,
-      errorCode: err.code
-    })
-    throw err
-  }
-}
 ```
-
-**客户端性能上报**：
-```typescript
-// lib/performance/reporter.ts
-import { onLCP, onTTFB, onINP } from 'web-vitals'
-
-export function initPerformanceReporting() {
-  // PDF首屏LCP
-  onLCP((metric) => {
-    reportMetric({
-      metricType: 'pdf_lcp',
-      valueMs: Math.round(metric.value),
-      pageUrl: window.location.pathname
-    })
-  })
-  
-  // TTFB
-  onTTFB((metric) => {
-    reportMetric({
-      metricType: 'pdf_ttfb',
-      valueMs: Math.round(metric.value),
-      pageUrl: window.location.pathname
-    })
-  })
-}
-
-async function reportMetric(metric: {
-  metricType: string
-  valueMs: number
-  pageUrl: string
-}) {
-  // 采样上报（10%用户）
-  if (Math.random() > 0.1) return
-  
-  try {
-    await fetch('/api/metrics/performance', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        ...metric,
-        clientVersion: process.env.NEXT_PUBLIC_BUILD_VERSION,
-        browserName: navigator.userAgent.match(/Chrome|Firefox|Safari/)?.[0]
-      })
-    })
-  } catch (err) {
-    // 静默失败，不影响用户体验
-    console.debug('[Performance] Failed to report metric:', err)
-  }
-}
-
-// app/layout.tsx
-export default function RootLayout({ children }) {
-  useEffect(() => {
-    initPerformanceReporting()
-  }, [])
-  
-  return <html>{children}</html>
-}
-```
-
-**成本分析查询**：
-```sql
--- 按用户统计AI成本
-SELECT 
-  user_id,
-  COUNT(*) as total_calls,
-  SUM(input_tokens) as total_input_tokens,
-  SUM(output_tokens) as total_output_tokens,
-  SUM(cost_usd_approx) as total_cost_usd,
-  AVG(latency_ms) as avg_latency_ms
-FROM ai_usage_logs
-WHERE created_at >= NOW() - INTERVAL '30 days'
-GROUP BY user_id
-ORDER BY total_cost_usd DESC
-LIMIT 100;
-
--- 按模型统计成本
-SELECT 
-  model,
-  operation_type,
-  COUNT(*) as call_count,
-  AVG(latency_ms) as avg_latency,
-  SUM(cost_usd_approx) as total_cost,
-  COUNT(*) FILTER (WHERE success = false) as error_count
-FROM ai_usage_logs
-WHERE created_at >= NOW() - INTERVAL '7 days'
-GROUP BY model, operation_type
-ORDER BY total_cost DESC;
-
--- 性能基线监控
-SELECT 
-  metric_type,
-  PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY value_ms) as p50,
-  PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY value_ms) as p75,
-  PERCENTILE_CONT(0.95) WITHIN GROUP (ORDER BY value_ms) as p95
-FROM client_performance_metrics
-WHERE created_at >= NOW() - INTERVAL '7 days'
-GROUP BY metric_type;
-```
-
-**定期清理与归档**：
-```typescript
-// scripts/cleanup-monitoring-data.ts
-export async function cleanupMonitoringData() {
-  const retentionDays = 90
-  const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
-  
-  // 清理请求日志
-  const requestLogs = await db.requestLog.deleteMany({
-    where: { createdAt: { lt: cutoffDate } }
-  })
-  
-  // AI成本数据归档到聚合表后再删除
-  await aggregateAIUsageToMonthly(cutoffDate)
-  const aiLogs = await db.aiUsageLog.deleteMany({
-    where: { createdAt: { lt: cutoffDate } }
-  })
-  
-  // 性能指标聚合后删除
-  await aggregatePerformanceMetrics(cutoffDate)
-  const perfMetrics = await db.clientPerformanceMetric.deleteMany({
-    where: { createdAt: { lt: cutoffDate } }
-  })
-  
-  console.log(`[Cleanup] Deleted ${requestLogs.count} request logs, ${aiLogs.count} AI logs, ${perfMetrics.count} perf metrics`)
-}
-
-// 月度聚合表（长期保存）
-async function aggregateAIUsageToMonthly(beforeDate: Date) {
-  await db.$executeRaw`
-    INSERT INTO ai_usage_monthly_summary (year, month, model, operation_type, total_calls, total_cost_usd)
-    SELECT 
-      EXTRACT(YEAR FROM created_at) as year,
-      EXTRACT(MONTH FROM created_at) as month,
-      model,
-      operation_type,
-      COUNT(*) as total_calls,
-      SUM(cost_usd_approx) as total_cost_usd
-    FROM ai_usage_logs
-    WHERE created_at < ${beforeDate}
-    GROUP BY year, month, model, operation_type
-    ON CONFLICT (year, month, model, operation_type) DO UPDATE
-    SET total_calls = EXCLUDED.total_calls, total_cost_usd = EXCLUDED.total_cost_usd
-  `
-}
-```
-
-**用途说明**：
-- `request_logs`: API健康监控、错误率分析、性能瓶颈定位
-- `ai_usage_logs`: 成本核算、模型选择优化、配额调整依据
-- `client_performance_metrics`: 验证性能基线（PDF LCP<3s）、浏览器兼容性分析
-
-**隐私保护**：
-- ✅ 不记录用户内容（PDF文本、AI回复内容）
-- ✅ 仅记录技术指标（tokens、latency、cost）
-- ✅ 客户端性能采样上报（10%用户）
-- ✅ 定期清理原始数据，保留聚合统计
-
-**留存策略**：
-- 原始日志：90天
-- 月度聚合：永久保存（仅统计数据）
-
 
 **用户反馈收集**（产品改进、问题定位）：
 
 ```sql
--- 用户反馈表
 CREATE TABLE user_feedback (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
   course_id UUID,
   file_id UUID,
-  page INT,  -- 可选，定位到具体页面
+  page INT,
   message TEXT NOT NULL,
   include_diagnostics BOOLEAN DEFAULT FALSE,
-  diagnostics JSONB,  -- { requestId, errorCode, clientVersion, userAgent }
-  status VARCHAR(20) DEFAULT 'open',  -- open, in_progress, resolved, closed
+  diagnostics JSONB,
+  status VARCHAR(20) DEFAULT 'open',
   created_at TIMESTAMP DEFAULT NOW()
 );
-
-CREATE INDEX idx_feedback_user ON user_feedback(user_id, created_at DESC);
-CREATE INDEX idx_feedback_status ON user_feedback(status, created_at DESC);
 ```
-
-**反馈提交实现**：
-```typescript
-// POST /api/feedback
-export async function POST(req: Request) {
-  const { courseId, fileId, page, message, includeDiagnostics } = await req.json()
-  const user = await getUser(req)
-  
-  let diagnostics = null
-  if (includeDiagnostics) {
-    diagnostics = {
-      requestId: req.headers.get('x-request-id'),
-      clientVersion: req.headers.get('x-client-version'),
-      userAgent: req.headers.get('user-agent'),
-      pageUrl: req.headers.get('referer'),
-      // 可选：最近的错误日志
-      recentErrors: await getRecentErrorsForUser(user.id, 5)
-    }
-  }
-  
-  const feedback = await db.userFeedback.create({
-    data: {
-      userId: user.id,
-      courseId,
-      fileId,
-      page,
-      message,
-      includeDiagnostics,
-      diagnostics,
-      status: 'open',
-      createdAt: new Date()
-    }
-  })
-  
-  return NextResponse.json({ ok: true, data: { feedbackId: feedback.id } })
-}
-```
-
-**前端反馈组件**：
-```typescript
-// components/FeedbackButton.tsx
-export function FeedbackButton() {
-  const [open, setOpen] = useState(false)
-  const [message, setMessage] = useState('')
-  const [includeDiagnostics, setIncludeDiagnostics] = useState(true)
-  
-  async function handleSubmit() {
-    await fetch('/api/feedback', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        courseId: currentCourse?.id,
-        fileId: currentFile?.id,
-        page: currentPage,
-        message,
-        includeDiagnostics
-      })
-    })
-    
-    toast.success('Thank you for your feedback!')
-    setOpen(false)
-  }
-  
-  return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger>
-        <Button variant="ghost" size="sm">
-          <MessageSquare className="w-4 h-4 mr-2" />
-          Feedback
-        </Button>
-      </DialogTrigger>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Send Feedback</DialogTitle>
-        </DialogHeader>
-        <Textarea 
-          placeholder="Tell us what you think or report an issue..."
-          value={message}
-          onChange={(e) => setMessage(e.target.value)}
-        />
-        <div className="flex items-center space-x-2">
-          <Checkbox 
-            id="diagnostics" 
-            checked={includeDiagnostics}
-            onCheckedChange={setIncludeDiagnostics}
-          />
-          <label htmlFor="diagnostics" className="text-sm text-gray-600">
-            Include diagnostic info (helps us fix bugs faster)
-          </label>
-        </div>
-        <Button onClick={handleSubmit}>Send Feedback</Button>
-      </DialogContent>
-    </Dialog>
-  )
-}
-```
-
 
 **计费与权限预留字段**（未来扩展）：
 
 ```sql
--- 在users表或单独的user_subscriptions表中添加
 CREATE TABLE user_subscriptions (
   user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
   plan VARCHAR(20) DEFAULT 'free',  -- free, trial, pro
-  quota_overrides JSONB,  -- { "learningInteractions": 200, "autoExplain": 500 }
-  billing_customer_id VARCHAR(100),  -- Stripe customer ID
-  billing_subscription_id VARCHAR(100),  -- Stripe subscription ID
+  quota_overrides JSONB,
+  billing_customer_id VARCHAR(100),
+  billing_subscription_id VARCHAR(100),
   entitlements JSONB DEFAULT '{"autoExplain": true, "courseSummary": true}',
   trial_ends_at TIMESTAMP,
-  subscription_status VARCHAR(20),  -- active, canceled, past_due
+  subscription_status VARCHAR(20),
   created_at TIMESTAMP DEFAULT NOW(),
   updated_at TIMESTAMP DEFAULT NOW()
 );
@@ -1286,17 +710,16 @@ CREATE TABLE user_subscriptions (
 ```typescript
 // lib/quota/get-user-quota.ts
 export async function getUserQuotaLimit(userId: string, bucket: string): Promise<number> {
-  // 1. 获取用户订阅信息
   const subscription = await db.userSubscription.findUnique({
     where: { userId }
   })
   
-  // 2. 检查配额覆盖（管理员手动调整）
+  // 检查配额覆盖（管理员手动调整）
   if (subscription?.quotaOverrides?.[bucket]) {
     return subscription.quotaOverrides[bucket]
   }
   
-  // 3. 根据计划返回默认配额
+  // 根据计划返回默认配额（见01_PRD §3.1）
   const planQuotas = {
     free: {
       learningInteractions: 150,
@@ -1326,75 +749,103 @@ export async function getUserQuotaLimit(userId: string, bucket: string): Promise
 }
 ```
 
-**功能开关检查**：
+**定时任务调度**（配额重置、数据清理）：
+
+配额按注册日期周期重置需要每天运行Cron Job：
+
 ```typescript
-// lib/entitlements/check-feature.ts
-export async function checkFeatureEnabled(
-  userId: string, 
-  feature: 'autoExplain' | 'courseSummary' | 'advancedAnalytics'
-): Promise<boolean> {
-  const subscription = await db.userSubscription.findUnique({
-    where: { userId }
+// scripts/reset-monthly-quota.ts
+export async function resetMonthlyQuota() {
+  const now = new Date()
+  const todayDay = now.getUTCDate()  // 今天是几号
+  
+  // 查找所有注册日期为今天的用户
+  const users = await db.user.findMany({
+    where: {
+      // 提取created_at的日期部分与todayDay匹配
+      // 使用SQL: EXTRACT(DAY FROM created_at) = todayDay
+    },
+    select: { id: true, createdAt: true }
   })
   
-  // MVP阶段所有功能默认启用
-  if (!subscription) return true
-  
-  return subscription.entitlements?.[feature] ?? true
-}
-
-// 使用示例
-// POST /api/ai/explain-page
-export async function POST(req: Request) {
-  const user = await getUser(req)
-  
-  // 检查功能是否启用
-  const autoExplainEnabled = await checkFeatureEnabled(user.id, 'autoExplain')
-  if (!autoExplainEnabled) {
-    return NextResponse.json(
-      { ok: false, error: 'FEATURE_NOT_AVAILABLE' },
-      { status: 403 }
-    )
+  for (const user of users) {
+    const registrationDay = new Date(user.createdAt).getUTCDate()
+    
+    if (registrationDay === todayDay) {
+      // 重置该用户的所有配额
+      await db.quota.updateMany({
+        where: { userId: user.id },
+        data: {
+          used: 0,
+          resetAt: calculateNextResetDate(user.createdAt)
+        }
+      })
+    }
   }
   
-  // 继续处理...
+  console.log(`[Cron] Reset quotas for ${users.length} users (registration day: ${todayDay})`)
+}
+
+// 计算下次重置日期
+function calculateNextResetDate(registrationDate: Date): Date {
+  const registrationDay = new Date(registrationDate).getUTCDate()
+  const now = new Date()
+  const nextReset = new Date(Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth() + 1,  // 下个月
+    registrationDay,
+    0, 0, 0, 0
+  ))
+  
+  // 处理边界情况：如果注册日昨31号,但下个月只有30天
+  if (nextReset.getUTCDate() !== registrationDay) {
+    // 设置为下个月的最后一天
+    nextReset.setUTCDate(0)
+  }
+  
+  return nextReset
+}
+
+// vercel.json
+{
+  "crons": [{
+    "path": "/api/cron/reset-monthly-quota",
+    "schedule": "0 0 * * *"  // 每天00:00 UTC运行,检查注册日匹配的用户
+  }]
 }
 ```
 
-**MVP阶段默认值**：
+**重置逻辑说明**：
+* Cron Job每天00:00 UTC运行
+* 检查今天是几号(例如7号)
+* 查找所有在X月7号注册的用户
+* 重置这些用户的配额为0
+* 计算下次重置日期(下个月7号)
+
+**边界情况处理**：
+* 用户29/30/31号注册,但某些月份没有这一天
+* 解决：使用该月的最后一天重置(例如2月28/29号)
+```
+
+**审计日志定期清理**：
 ```typescript
-// 新用户注册时自动创建
-async function createUserSubscription(userId: string) {
-  await db.userSubscription.create({
-    data: {
-      userId,
-      plan: 'free',
-      quotaOverrides: null,
-      billingCustomerId: null,
-      entitlements: {
-        autoExplain: true,
-        courseSummary: true,
-        advancedAnalytics: false  // 未来功能
-      }
-    }
+// scripts/cleanup-audit-logs.ts
+export async function cleanupOldAuditLogs(retentionDays: number = 90) {
+  const cutoffDate = new Date(Date.now() - retentionDays * 24 * 60 * 60 * 1000)
+  
+  const result = await db.auditLog.deleteMany({
+    where: { createdAt: { lt: cutoffDate } }
   })
+  
+  console.log(`[Cleanup] Deleted ${result.count} audit logs older than ${retentionDays} days`)
 }
 ```
-
-**说明**：
-- MVP阶段所有用户默认`free`计划
-- `quotaOverrides`用于管理员手动调整特定用户配额（如测试用户、VIP用户）
-- `entitlements`为未来功能开关预留，MVP阶段全部启用
-- `billingCustomerId`预留给未来Stripe集成
-
-
-
 
 ### 13.2 禁止收集（明确不做）
 
 ```typescript
 // ❌ 禁止的代码示例
-const userIP = req.headers['x-forwarded-for']  // 禁止收集IP
+const userIP = req.headers['x-forwarded-for']  // 禁止收集完整IP
 import FingerprintJS from '@fingerprintjs/fingerprintjs'  // 禁止设备指纹
 import ReactGA from 'react-ga'  // 禁止Google Analytics
 
@@ -1430,3 +881,27 @@ async function deleteAccount(userId: string) {
   }
 }
 ```
+
+---
+
+## 附录：实施优先级
+
+### P0（必须立即实施）
+- ✅ Token有效期30天
+- ✅ Cookie API正确签名
+- ✅ 会话刷新使用getSession()
+- ✅ 扫描件检测算法修正
+- ✅ Streaming配额扣除规则
+- ✅ 虚拟滚动依赖添加
+
+### P1（强烈建议实施）
+- 轻量行为数据收集
+- PDF内容Hash
+- 设备与客户端状态
+- 安全与审计数据
+- 定时任务调度
+
+### P2（可选实施）
+- 运行监控与成本核算
+- 用户反馈收集
+- 计费与权限预留
