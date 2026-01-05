@@ -227,9 +227,9 @@
 │ Document summaries:        23 / 100  ██░░░ │
 │ Section summaries:         15 / 65   ██░░░ │
 │ Course outlines:            3 / 15   █░░░░ │
+│ Auto-explain:             145 / 300  ████░ │
 │                                             │
-│ Auto-explain (daily):     145 / 300  ████░ │
-│ Resets at: 2025-01-21 00:00 UTC             │
+│ Resets at: 2025-02-01 00:00 UTC             │
 └─────────────────────────────────────────────┘
 ```
 
@@ -237,7 +237,7 @@
 
 **说明文案**：
 * "All AI quotas are shared across all your courses."
-* "Auto-explain quota resets daily at 00:00 UTC."
+* "All quotas reset monthly on the 1st at 00:00 UTC."
 
 ---
 

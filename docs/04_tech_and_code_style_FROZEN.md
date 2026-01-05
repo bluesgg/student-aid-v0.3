@@ -324,13 +324,15 @@ export const QUOTA_CONFIG = {
     limit: parseInt(process.env.COURSE_LIMIT || '6'),
   },
   ai: {
-    learningInteractions: { limit: 150, perAccount: true },
-    documentSummary: { limit: 100, perAccount: true },
-    sectionSummary: { limit: 65, perAccount: true },
-    courseSummary: { limit: 15, perAccount: true },
+    learningInteractions: { limit: 150, perAccount: true, resetMonthly: true },
+    documentSummary: { limit: 100, perAccount: true, resetMonthly: true },
+    sectionSummary: { limit: 65, perAccount: true, resetMonthly: true },
+    courseSummary: { limit: 15, perAccount: true, resetMonthly: true },
   },
   autoExplain: {
-    perAccountDailyLimit: parseInt(process.env.AUTO_EXPLAIN_DAILY || '300'),
+    limit: parseInt(process.env.AUTO_EXPLAIN_MONTHLY || '300'),
+    perAccount: true,
+    resetMonthly: true,
     maxStickersPerRequest: 6,
     timezone: 'UTC',
   },
@@ -355,7 +357,7 @@ AI_LEARNING_LIMIT=150
 AI_DOC_SUMMARY_LIMIT=100
 AI_SECTION_SUMMARY_LIMIT=65
 AI_COURSE_SUMMARY_LIMIT=15
-AUTO_EXPLAIN_DAILY=300
+AUTO_EXPLAIN_MONTHLY=300
 
 # === 功能开关 ===
 ENABLE_AUTO_EXPLAIN=true
@@ -746,32 +748,34 @@ export async function getUserQuotaLimit(userId: string, bucket: string): Promise
 
 **定时任务调度**（配额重置、数据清理）：
 
-自动讲解每日重置需要Cron Job实现：
+所有配额每月1号重置需要Cron Job实现：
 
 ```typescript
-// scripts/reset-auto-explain-quota.ts
-export async function resetAutoExplainQuota() {
-  const today = new Date().toISOString().split('T')[0]
+// scripts/reset-monthly-quota.ts
+export async function resetMonthlyQuota() {
+  const firstOfMonth = new Date()
+  firstOfMonth.setUTCDate(1)
+  firstOfMonth.setUTCHours(0, 0, 0, 0)
   
+  // 重置所有AI配额
   await db.quota.updateMany({
     where: {
-      bucket: 'autoExplain',
       resetAt: { lt: new Date() }
     },
     data: {
       used: 0,
-      resetAt: new Date(new Date().setUTCHours(24, 0, 0, 0))
+      resetAt: new Date(firstOfMonth.setMonth(firstOfMonth.getMonth() + 1))
     }
   })
   
-  console.log(`[Cron] Reset auto-explain quota for ${today}`)
+  console.log(`[Cron] Reset all quotas for ${firstOfMonth.toISOString().split('T')[0]}`)
 }
 
 // vercel.json
 {
   "crons": [{
-    "path": "/api/cron/reset-auto-explain",
-    "schedule": "0 0 * * *"  // 每天00:00 UTC
+    "path": "/api/cron/reset-monthly-quota",
+    "schedule": "0 0 1 * *"  // 每月1号00:00 UTC
   }]
 }
 ```
