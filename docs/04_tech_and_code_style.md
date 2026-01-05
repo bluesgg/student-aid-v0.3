@@ -1,7 +1,6 @@
 # 04 技术与代码规范
 
 > **文档定位**：技术栈、代码规范与实现约束;业务需求见01,API契约见03。
-> **版本状态**：✅ 冻结 - 基于审计修正的最终版本
 
 ---
 
@@ -385,9 +384,16 @@ NEXT_PUBLIC_BUILD_VERSION=v1.0.0
 * `PdfViewer`：PDF阅读器(左侧,40-50%宽度)
 * `StickerPanel`：贴纸栏(中栏,25-30%宽度,包含自动+手动贴纸)
 * `QaPanel`：问答与总结区(右栏,25-30%宽度)
+* `ResizableLayout`：可调整布局容器(处理拖拽分隔条、宽度约束、偏好持久化)
 * `QuotaDisplay`：配额展示
 
 **P5页面布局**：采用左中右三栏结构,PDF阅读器、贴纸栏、问答区物理分离,提升空间利用和视觉清晰度
+
+**布局调整实现**：
+* 使用`react-resizable-panels`或原生`onMouseDown`+`onMouseMove`实现拖拽
+* 每栏宽度约束：最小20%，最大70%
+* 偏好保存：`localStorage.setItem('p5-layout', JSON.stringify({ left: 45, middle: 30, right: 25 }))`
+* 加载时恢复：读取localStorage，缺省时使用默认比例(45%/30%/25%)
 
 ---
 
