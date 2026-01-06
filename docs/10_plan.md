@@ -13,8 +13,10 @@ This plan covers the implementation of StudentAid, a PDF learning platform for u
 **Tech Stack** (Locked):
 - Frontend: Next.js 14 App Router + TypeScript + Tailwind + TanStack Query
 - Backend: Next.js Route Handlers + Supabase (Auth/Postgres/Storage) + OpenAI API
-- ORM: Prisma (type-safe, migrations)
+- Database: Supabase Postgres with RLS + SQL migrations (no ORM)
 - Rate Limiting: Vercel KV (Redis)
+- Error Monitoring: Sentry (server-side only)
+- Testing: Vitest (API tests) + Playwright (E2E smoke tests)
 - Layout: react-resizable-panels
 - Package Manager: pnpm
 
@@ -31,36 +33,45 @@ This plan covers the implementation of StudentAid, a PDF learning platform for u
 - Initialize Next.js 14 with App Router + TypeScript
 - Install all dependencies (see FILE TREE section)
 - Configure Tailwind CSS + base styles
-- Set up Supabase project (Auth + Database + Storage)
-- Configure Prisma with Supabase connection
+- Set up Supabase projects (separate for dev/staging/prod)
+- Create initial database schema with SQL migrations
+- Set up Supabase RLS policies for row-level security
+- Initialize Sentry for server-side error tracking
 - Set up environment variables
 - Initialize Vercel KV for rate limiting
 
 **Acceptance Criteria**:
 - [ ] `pnpm dev` starts dev server successfully
 - [ ] `pnpm lint` and `pnpm typecheck` pass
-- [ ] Supabase project created with database accessible
-- [ ] Prisma schema synced with Supabase
+- [ ] Supabase projects created (dev/staging/prod) with database accessible
+- [ ] Database schema initialized via Supabase SQL migrations
+- [ ] RLS policies active on all tables (verified with test queries)
+- [ ] Sentry initialized and capturing test errors
+- [ ] Source maps uploaded to Sentry for production
 - [ ] Environment variables documented in `.env.example`
 
 **Files to Create**:
 ```
 /
 ├── package.json (with all dependencies)
-├── next.config.js
+├── next.config.js (with Sentry webpack plugin)
 ├── tailwind.config.js
 ├── tsconfig.json
+├── sentry.server.config.ts
+├── sentry.edge.config.ts (for middleware)
 ├── .env.example
 ├── .env.local (not committed)
-├── prisma/
-│   └── schema.prisma
 └── src/
     ├── app/layout.tsx
     ├── app/page.tsx (redirect to /courses or /login)
     └── lib/
         ├── supabase/
-        │   └── server.ts (createClient helper)
-        └── prisma.ts (singleton client)
+        │   ├── server.ts (createClient helper)
+        │   ├── db.ts (typed query helpers)
+        │   └── migrations/
+        │       └── 001_initial_schema.sql
+        └── sentry/
+            └── config.ts (Sentry error handling helpers)
 ```
 
 **Dependencies** (partial list):
@@ -72,7 +83,7 @@ This plan covers the implementation of StudentAid, a PDF learning platform for u
     "react-dom": "^18.3.0",
     "@supabase/supabase-js": "^2.39.0",
     "@supabase/ssr": "^0.1.0",
-    "@prisma/client": "^5.9.0",
+    "@sentry/nextjs": "^7.99.0",
     "openai": "^4.28.0",
     "@tanstack/react-query": "^5.28.0",
     "@vercel/kv": "^1.0.1",
@@ -92,12 +103,13 @@ This plan covers the implementation of StudentAid, a PDF learning platform for u
   },
   "devDependencies": {
     "typescript": "^5.3.0",
-    "prisma": "^5.9.0",
     "@types/node": "^20.11.0",
     "@types/react": "^18.3.0",
     "tailwindcss": "^3.4.0",
     "eslint": "^8.56.0",
-    "eslint-config-next": "^14.2.0"
+    "eslint-config-next": "^14.2.0",
+    "vitest": "^1.2.0",
+    "@playwright/test": "^1.40.0"
   }
 }
 ```
@@ -268,53 +280,72 @@ src/
     └── storage.ts (Supabase Storage helpers)
 ```
 
-**Database Schema Changes** (Prisma):
-```prisma
-model Course {
-  id           String   @id @default(uuid())
-  userId       String
-  name         String
-  school       String
-  term         String
-  fileCount    Int      @default(0)
-  lastVisitedAt DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+**Database Schema** (SQL with RLS):
+```sql
+-- Part of migration: 001_initial_schema.sql
 
-  files        File[]
+-- ==================== COURSES ====================
 
-  @@unique([userId, name])
-  @@index([userId])
-}
+CREATE TABLE courses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  school TEXT NOT NULL,
+  term TEXT NOT NULL,
+  file_count INTEGER DEFAULT 0,
+  last_visited_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-model File {
-  id              String   @id @default(uuid())
-  courseId        String
-  userId          String
-  name            String
-  type            FileType
-  pageCount       Int
-  isScanned       Boolean  @default(false)
-  pdfContentHash  String?  @db.VarChar(64)
-  storageKey      String   // Supabase Storage path
-  lastReadPage    Int      @default(1)
-  uploadedAt      DateTime @default(now())
+  CONSTRAINT unique_user_course_name UNIQUE(user_id, name)
+);
 
-  course          Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  stickers        Sticker[]
-  summaries       Summary[]
+CREATE INDEX idx_courses_user_id ON courses(user_id);
 
-  @@unique([courseId, name])
-  @@index([userId, pdfContentHash]) // For dedup lookup
-  @@index([courseId])
-}
+-- RLS Policies
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 
-enum FileType {
-  Lecture
-  Homework
-  Exam
-  Other
-}
+CREATE POLICY "Users can view own courses" ON courses
+  FOR SELECT USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own courses" ON courses
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own courses" ON courses
+  FOR UPDATE USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own courses" ON courses
+  FOR DELETE USING (auth.uid() = user_id);
+
+-- ==================== FILES ====================
+
+CREATE TYPE file_type AS ENUM ('Lecture', 'Homework', 'Exam', 'Other');
+
+CREATE TABLE files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type file_type NOT NULL,
+  page_count INTEGER NOT NULL,
+  is_scanned BOOLEAN DEFAULT FALSE,
+  pdf_content_hash VARCHAR(64),
+  storage_key TEXT NOT NULL,
+  last_read_page INTEGER DEFAULT 1,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  CONSTRAINT unique_course_file_name UNIQUE(course_id, name)
+);
+
+CREATE INDEX idx_files_user_id_hash ON files(user_id, pdf_content_hash);
+CREATE INDEX idx_files_course_id ON files(course_id);
+
+-- RLS Policies
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own files" ON files
+  FOR ALL USING (auth.uid() = user_id);
 ```
 
 **API Routes**:
@@ -476,57 +507,70 @@ src/
         └── markdown-renderer.tsx (moved from features/ai)
 ```
 
-**Database Schema Changes** (Prisma):
-```prisma
-model Sticker {
-  id              String   @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String
-  type            StickerType
-  page            Int
-  anchorText      String   @db.Text
-  anchorRect      Json?    // { x, y, width, height }
-  parentId        String?
-  contentMarkdown String   @db.Text
-  folded          Boolean  @default(false)
-  depth           Int      @default(0)
-  createdAt       DateTime @default(now())
+**Database Schema** (SQL with RLS):
+```sql
+-- Part of migration: 001_initial_schema.sql
 
-  file            File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  parent          Sticker? @relation("StickerThread", fields: [parentId], references: [id], onDelete: Cascade)
-  children        Sticker[] @relation("StickerThread")
+-- ==================== STICKERS ====================
 
-  @@index([fileId, page])
-  @@index([userId])
-}
+CREATE TYPE sticker_type AS ENUM ('auto', 'manual');
 
-enum StickerType {
-  auto
-  manual
-}
+CREATE TABLE stickers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  type sticker_type NOT NULL,
+  page INTEGER NOT NULL,
+  anchor_text TEXT NOT NULL,
+  anchor_rect JSONB,
+  parent_id UUID REFERENCES stickers(id) ON DELETE CASCADE,
+  content_markdown TEXT NOT NULL,
+  folded BOOLEAN DEFAULT FALSE,
+  depth INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-model Quota {
-  id          String   @id @default(uuid())
-  userId      String
-  bucket      QuotaBucket
-  used        Int      @default(0)
-  limit       Int
-  resetAt     DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+CREATE INDEX idx_stickers_file_page_type ON stickers(file_id, page, type);
+CREATE INDEX idx_stickers_user_id ON stickers(user_id);
 
-  @@unique([userId, bucket])
-  @@index([userId])
-}
+-- RLS Policies
+ALTER TABLE stickers ENABLE ROW LEVEL SECURITY;
 
-enum QuotaBucket {
-  learningInteractions
-  documentSummary
-  sectionSummary
-  courseSummary
-  autoExplain
-}
+CREATE POLICY "Users can manage own stickers" ON stickers
+  FOR ALL USING (auth.uid() = user_id);
+
+-- ==================== QUOTAS ====================
+
+CREATE TYPE quota_bucket AS ENUM (
+  'learningInteractions',
+  'documentSummary',
+  'sectionSummary',
+  'courseSummary',
+  'autoExplain'
+);
+
+CREATE TABLE quotas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  bucket quota_bucket NOT NULL,
+  used INTEGER DEFAULT 0,
+  "limit" INTEGER NOT NULL,
+  reset_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  CONSTRAINT unique_user_bucket UNIQUE(user_id, bucket)
+);
+
+CREATE INDEX idx_quotas_user_id ON quotas(user_id);
+CREATE INDEX idx_quotas_reset_at ON quotas(reset_at);
+
+-- RLS Policies
+ALTER TABLE quotas ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own quotas" ON quotas
+  FOR ALL USING (auth.uid() = user_id);
 ```
 
 **API Routes**:
@@ -594,44 +638,57 @@ src/
         └── summarize.ts (summary prompts)
 ```
 
-**Database Schema Changes** (Prisma):
-```prisma
-model QaInteraction {
-  id              String   @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String
-  question        String   @db.Text
-  answerMarkdown  String   @db.Text
-  references      Json     // [{ page: 3, snippet: "..." }]
-  createdAt       DateTime @default(now())
+**Database Schema Changes** (SQL with RLS):
+```sql
+-- Part of migration: 001_initial_schema.sql
 
-  @@index([fileId])
-  @@index([userId])
-}
+-- ==================== QA INTERACTIONS ====================
 
-model Summary {
-  id              String      @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String?
-  type            SummaryType
-  pageRangeStart  Int?
-  pageRangeEnd    Int?
-  contentMarkdown String      @db.Text
-  createdAt       DateTime    @default(now())
+CREATE TABLE qa_interactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  question TEXT NOT NULL,
+  answer_markdown TEXT NOT NULL,
+  references JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-  file            File?       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+CREATE INDEX idx_qa_file_id ON qa_interactions(file_id);
+CREATE INDEX idx_qa_user_id ON qa_interactions(user_id);
 
-  @@index([fileId, type])
-  @@index([userId])
-}
+-- RLS Policies
+ALTER TABLE qa_interactions ENABLE ROW LEVEL SECURITY;
 
-enum SummaryType {
-  document
-  section
-  course
-}
+CREATE POLICY "Users can manage own qa" ON qa_interactions
+  FOR ALL USING (auth.uid() = user_id);
+
+-- ==================== SUMMARIES ====================
+
+CREATE TYPE summary_type AS ENUM ('document', 'section', 'course');
+
+CREATE TABLE summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  type summary_type NOT NULL,
+  page_range_start INTEGER,
+  page_range_end INTEGER,
+  content_markdown TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_summaries_file_type ON summaries(file_id, type);
+CREATE INDEX idx_summaries_user_id ON summaries(user_id);
+CREATE INDEX idx_summaries_course_type ON summaries(course_id, type);
+
+-- RLS Policies
+ALTER TABLE summaries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own summaries" ON summaries
+  FOR ALL USING (auth.uid() = user_id);
 ```
 
 **API Routes**:
@@ -693,19 +750,24 @@ src/
 
 ---
 
-### M8: Usage Dashboard (P7) [OPTIONAL]
-**Goal**: Display quota usage and limits
+### M8: Usage & Token Tracking Dashboard (P7) [REQUIRED per D7]
+**Goal**: Display quota usage, token consumption, and estimated costs
 
 **Reference Docs**:
 - PRD §3.1 (quota definitions)
 - Page Design §7 (P7)
 - API Design §4 (quota endpoint)
+- Decision D7 (Token Tracking)
 
 **Scope**:
-- P7 usage page
+- P7 usage page with quota and token tracking
 - Display all quota buckets with progress bars
 - Show reset date (based on user registration anniversary)
 - Color-coded warnings (green < 70%, yellow 70-90%, red > 90%)
+- **NEW**: Display token usage and estimated costs per quota bucket
+- **NEW**: Show cost breakdown by operation type
+- **NEW**: Project monthly costs based on current usage
+- **NEW**: Alert if costs exceed threshold
 
 **Acceptance Criteria**:
 - [ ] Shows all quota buckets with used/limit
@@ -713,23 +775,40 @@ src/
 - [ ] Displays next reset date in user's timezone
 - [ ] Explains account-wide quota sharing
 - [ ] Links to P7 from P4 quota preview
+- [ ] **NEW**: Shows estimated token usage per AI operation
+- [ ] **NEW**: Displays cost breakdown by operation type (bar chart)
+- [ ] **NEW**: Shows token usage timeline (line graph)
+- [ ] **NEW**: Projects monthly costs with visual indicator
+- [ ] **NEW**: Alerts when projected cost > $10/month
 
 **Files to Create/Modify**:
 ```
 src/
 ├── app/
-│   └── (app)/
-│       └── account/
-│           └── usage/
-│               └── page.tsx
-└── features/
-    └── usage/
-        ├── components/
-        │   ├── quota-overview.tsx
-        │   ├── quota-progress-bar.tsx
-        │   └── reset-date-display.tsx
-        └── hooks/
-            └── use-quota-overview.ts
+│   ├── (app)/
+│   │   └── account/
+│   │       └── usage/
+│   │           └── page.tsx
+│   └── api/
+│       └── quotas/
+│           └── tokens/
+│               └── route.ts (NEW: token stats endpoint)
+├── features/
+│   └── usage/
+│       ├── components/
+│       │   ├── quota-overview.tsx
+│       │   ├── quota-progress-bar.tsx
+│       │   ├── reset-date-display.tsx
+│       │   ├── token-usage-chart.tsx (NEW: bar chart)
+│       │   ├── cost-breakdown.tsx (NEW: pie chart)
+│       │   ├── token-timeline.tsx (NEW: line graph)
+│       │   └── estimated-monthly-cost.tsx (NEW: projection)
+│       └── hooks/
+│           ├── use-quota-overview.ts
+│           └── use-token-stats.ts (NEW)
+└── lib/
+    └── openai/
+        └── cost-tracker.ts (NEW: cost calculation utilities)
 ```
 
 ---
@@ -774,235 +853,268 @@ src/
 
 ## DATA MODEL
 
-### Complete Prisma Schema
+### Complete Database Schema (SQL with RLS)
 
-```prisma
-// prisma/schema.prisma
+```sql
+-- Migration: 001_initial_schema.sql
+-- Complete database schema for StudentAid MVP
+-- All tables use Row-Level Security (RLS) for automatic user isolation
 
-generator client {
-  provider = "prisma-client-js"
-}
+-- Enable RLS globally
+ALTER DATABASE postgres SET row_security = on;
 
-datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
-}
+-- ==================== AUTH ====================
+-- Users managed by Supabase Auth (auth.users table)
+-- All user_id columns reference auth.users(id)
 
-// ==================== AUTH ====================
-// Users managed by Supabase Auth (auth.users)
-// Reference by userId (String UUID)
+-- ==================== COURSES ====================
 
-// ==================== COURSES ====================
+CREATE TABLE courses (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  school TEXT NOT NULL,
+  term TEXT NOT NULL,
+  file_count INTEGER DEFAULT 0,
+  last_visited_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-model Course {
-  id            String    @id @default(uuid())
-  userId        String
-  name          String
-  school        String
-  term          String
-  fileCount     Int       @default(0)
-  lastVisitedAt DateTime?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  CONSTRAINT unique_user_course_name UNIQUE(user_id, name)
+);
 
-  files         File[]
+CREATE INDEX idx_courses_user_id ON courses(user_id);
 
-  @@unique([userId, name])
-  @@index([userId])
-  @@map("courses")
-}
+-- RLS Policies
+ALTER TABLE courses ENABLE ROW LEVEL SECURITY;
 
-// ==================== FILES ====================
+CREATE POLICY "Users can view own courses" ON courses
+  FOR SELECT USING (auth.uid() = user_id);
 
-model File {
-  id              String   @id @default(uuid())
-  courseId        String
-  userId          String
-  name            String
-  type            FileType
-  pageCount       Int
-  isScanned       Boolean  @default(false)
-  pdfContentHash  String?  @db.VarChar(64)
-  storageKey      String   // Supabase Storage path
-  lastReadPage    Int      @default(1)
-  uploadedAt      DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+CREATE POLICY "Users can insert own courses" ON courses
+  FOR INSERT WITH CHECK (auth.uid() = user_id);
 
-  course          Course    @relation(fields: [courseId], references: [id], onDelete: Cascade)
-  stickers        Sticker[]
-  summaries       Summary[]
-  qaInteractions  QaInteraction[]
+CREATE POLICY "Users can update own courses" ON courses
+  FOR UPDATE USING (auth.uid() = user_id);
 
-  @@unique([courseId, name])
-  @@index([userId, pdfContentHash])
-  @@index([courseId])
-  @@map("files")
-}
+CREATE POLICY "Users can delete own courses" ON courses
+  FOR DELETE USING (auth.uid() = user_id);
 
-enum FileType {
-  Lecture
-  Homework
-  Exam
-  Other
-}
+-- ==================== FILES ====================
 
-// ==================== AI LEARNING DATA ====================
+CREATE TYPE file_type AS ENUM ('Lecture', 'Homework', 'Exam', 'Other');
 
-model Sticker {
-  id              String      @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String
-  type            StickerType
-  page            Int
-  anchorText      String      @db.Text
-  anchorRect      Json?       // { x, y, width, height }
-  parentId        String?
-  contentMarkdown String      @db.Text
-  folded          Boolean     @default(false)
-  depth           Int         @default(0)
-  createdAt       DateTime    @default(now())
+CREATE TABLE files (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  course_id UUID NOT NULL REFERENCES courses(id) ON DELETE CASCADE,
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  type file_type NOT NULL,
+  page_count INTEGER NOT NULL,
+  is_scanned BOOLEAN DEFAULT FALSE,
+  pdf_content_hash VARCHAR(64),
+  storage_key TEXT NOT NULL,
+  last_read_page INTEGER DEFAULT 1,
+  uploaded_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
 
-  file            File        @relation(fields: [fileId], references: [id], onDelete: Cascade)
-  parent          Sticker?    @relation("StickerThread", fields: [parentId], references: [id], onDelete: Cascade)
-  children        Sticker[]   @relation("StickerThread")
+  CONSTRAINT unique_course_file_name UNIQUE(course_id, name)
+);
 
-  @@index([fileId, page, type])
-  @@index([userId])
-  @@map("stickers")
-}
+CREATE INDEX idx_files_user_id_hash ON files(user_id, pdf_content_hash);
+CREATE INDEX idx_files_course_id ON files(course_id);
 
-enum StickerType {
-  auto
-  manual
-}
+-- RLS Policies
+ALTER TABLE files ENABLE ROW LEVEL SECURITY;
 
-model QaInteraction {
-  id              String   @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String
-  question        String   @db.Text
-  answerMarkdown  String   @db.Text
-  references      Json     // [{ page: 3, snippet: "..." }]
-  createdAt       DateTime @default(now())
+CREATE POLICY "Users can manage own files" ON files
+  FOR ALL USING (auth.uid() = user_id);
 
-  file            File     @relation(fields: [fileId], references: [id], onDelete: Cascade)
+-- ==================== AI LEARNING DATA ====================
 
-  @@index([fileId])
-  @@index([userId])
-  @@map("qa_interactions")
-}
+-- Stickers (AI explanations anchored to PDF pages)
 
-model Summary {
-  id              String      @id @default(uuid())
-  userId          String
-  courseId        String
-  fileId          String?
-  type            SummaryType
-  pageRangeStart  Int?
-  pageRangeEnd    Int?
-  contentMarkdown String      @db.Text
-  createdAt       DateTime    @default(now())
+CREATE TYPE sticker_type AS ENUM ('auto', 'manual');
 
-  file            File?       @relation(fields: [fileId], references: [id], onDelete: Cascade)
+CREATE TABLE stickers (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  type sticker_type NOT NULL,
+  page INTEGER NOT NULL,
+  anchor_text TEXT NOT NULL,
+  anchor_rect JSONB,
+  parent_id UUID REFERENCES stickers(id) ON DELETE CASCADE,
+  content_markdown TEXT NOT NULL,
+  folded BOOLEAN DEFAULT FALSE,
+  depth INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-  @@index([fileId, type])
-  @@index([userId])
-  @@index([courseId, type])
-  @@map("summaries")
-}
+CREATE INDEX idx_stickers_file_page_type ON stickers(file_id, page, type);
+CREATE INDEX idx_stickers_user_id ON stickers(user_id);
 
-enum SummaryType {
-  document
-  section
-  course
-}
+-- RLS Policies
+ALTER TABLE stickers ENABLE ROW LEVEL SECURITY;
 
-// ==================== QUOTAS ====================
+CREATE POLICY "Users can manage own stickers" ON stickers
+  FOR ALL USING (auth.uid() = user_id);
 
-model Quota {
-  id          String      @id @default(uuid())
-  userId      String
-  bucket      QuotaBucket
-  used        Int         @default(0)
-  limit       Int
-  resetAt     DateTime
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+-- Q&A Interactions
 
-  @@unique([userId, bucket])
-  @@index([userId])
-  @@index([resetAt])
-  @@map("quotas")
-}
+CREATE TABLE qa_interactions (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+  question TEXT NOT NULL,
+  answer_markdown TEXT NOT NULL,
+  references JSONB NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
 
-enum QuotaBucket {
-  learningInteractions
-  documentSummary
-  sectionSummary
-  courseSummary
-  autoExplain
-}
+CREATE INDEX idx_qa_file_id ON qa_interactions(file_id);
+CREATE INDEX idx_qa_user_id ON qa_interactions(user_id);
 
-// ==================== OPTIONAL: MONITORING & AUDIT ====================
-// (Implement in P1 if monitoring is required, otherwise defer)
+-- RLS Policies
+ALTER TABLE qa_interactions ENABLE ROW LEVEL SECURITY;
 
-model AuditLog {
-  id          String   @id @default(uuid())
-  userId      String?
-  eventType   String   @db.VarChar(50)
-  ipPrefix    String?  @db.VarChar(20)
-  userAgent   String?  @db.VarChar(255)
-  requestId   String?  @db.VarChar(50)
-  metadata    Json?
-  createdAt   DateTime @default(now())
+CREATE POLICY "Users can manage own qa" ON qa_interactions
+  FOR ALL USING (auth.uid() = user_id);
 
-  @@index([userId])
-  @@index([createdAt])
-  @@map("audit_logs")
-}
+-- Summaries
 
-model AiUsageLog {
-  id              String   @id @default(uuid())
-  requestId       String?  @db.VarChar(50)
-  userId          String?
-  courseId        String?
-  fileId          String?
-  operationType   String   @db.VarChar(50)
-  model           String   @db.VarChar(50)
-  inputTokens     Int
-  outputTokens    Int
-  costUsdApprox   Decimal  @db.Decimal(10, 6)
-  latencyMs       Int
-  success         Boolean
-  errorCode       String?  @db.VarChar(50)
-  createdAt       DateTime @default(now())
+CREATE TYPE summary_type AS ENUM ('document', 'section', 'course');
 
-  @@index([userId])
-  @@index([createdAt])
-  @@map("ai_usage_logs")
-}
+CREATE TABLE summaries (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  course_id UUID NOT NULL,
+  file_id UUID REFERENCES files(id) ON DELETE CASCADE,
+  type summary_type NOT NULL,
+  page_range_start INTEGER,
+  page_range_end INTEGER,
+  content_markdown TEXT NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_summaries_file_type ON summaries(file_id, type);
+CREATE INDEX idx_summaries_user_id ON summaries(user_id);
+CREATE INDEX idx_summaries_course_type ON summaries(course_id, type);
+
+-- RLS Policies
+ALTER TABLE summaries ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own summaries" ON summaries
+  FOR ALL USING (auth.uid() = user_id);
+
+-- ==================== QUOTAS ====================
+
+CREATE TYPE quota_bucket AS ENUM (
+  'learningInteractions',
+  'documentSummary',
+  'sectionSummary',
+  'courseSummary',
+  'autoExplain'
+);
+
+CREATE TABLE quotas (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+  bucket quota_bucket NOT NULL,
+  used INTEGER DEFAULT 0,
+  "limit" INTEGER NOT NULL,
+  reset_at TIMESTAMPTZ NOT NULL,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+
+  CONSTRAINT unique_user_bucket UNIQUE(user_id, bucket)
+);
+
+CREATE INDEX idx_quotas_user_id ON quotas(user_id);
+CREATE INDEX idx_quotas_reset_at ON quotas(reset_at);
+
+-- RLS Policies
+ALTER TABLE quotas ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can manage own quotas" ON quotas
+  FOR ALL USING (auth.uid() = user_id);
+
+-- ==================== OPTIONAL: MONITORING & AUDIT ====================
+-- (Implement in M1 for error monitoring via Sentry)
+
+CREATE TABLE audit_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  event_type VARCHAR(50) NOT NULL,
+  ip_prefix VARCHAR(20),
+  user_agent VARCHAR(255),
+  request_id VARCHAR(50),
+  metadata JSONB,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_audit_user_id ON audit_logs(user_id);
+CREATE INDEX idx_audit_created_at ON audit_logs(created_at);
+
+-- RLS Policies (admin-only, no user access)
+ALTER TABLE audit_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role only" ON audit_logs
+  FOR ALL USING (auth.role() = 'service_role');
+
+-- AI Usage Logs (for token tracking dashboard)
+
+CREATE TABLE ai_usage_logs (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  request_id VARCHAR(50),
+  user_id UUID REFERENCES auth.users(id) ON DELETE SET NULL,
+  course_id UUID,
+  file_id UUID,
+  operation_type VARCHAR(50) NOT NULL,
+  model VARCHAR(50) NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cost_usd_approx DECIMAL(10, 6) NOT NULL,
+  latency_ms INTEGER NOT NULL,
+  success BOOLEAN NOT NULL,
+  error_code VARCHAR(50),
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX idx_ai_logs_user_id ON ai_usage_logs(user_id);
+CREATE INDEX idx_ai_logs_created_at ON ai_usage_logs(created_at);
+
+-- RLS Policies (admin-only for privacy; users access via aggregated API)
+ALTER TABLE ai_usage_logs ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Service role only" ON ai_usage_logs
+  FOR ALL USING (auth.role() = 'service_role');
 ```
 
 ### Access Control Principles
 
-**Row-Level Security (RLS)** via Prisma middleware or Supabase RLS policies:
+**Row-Level Security (RLS)** via Supabase PostgreSQL policies:
 
-1. **Courses**: User can only access their own courses (`userId = auth.userId`)
-2. **Files**: User can only access files in their courses
-3. **Stickers/QA/Summaries**: User can only access their own learning data
-4. **Quotas**: User can only read/write their own quota records
+All tables have RLS enabled with policies that automatically filter by `auth.uid()`. This ensures:
 
-**Implementation Options**:
-- **Option A** (Recommended): Prisma middleware to inject `where: { userId }` filters
-- **Option B**: Supabase RLS policies (requires Supabase service role key)
-- **Option C**: Manual checks in every API route (least DRY)
+1. **Courses**: Users can only view/modify their own courses (`user_id = auth.uid()`)
+2. **Files**: Users can only access files they own (enforced at database level)
+3. **Stickers/QA/Summaries**: Users can only access their own learning data
+4. **Quotas**: Users can only read/write their own quota records
+5. **Audit/AI Usage Logs**: Admin-only access (service role) - users access aggregated data via API
+
+**Benefits of RLS**:
+- **Database-level security**: Cannot be bypassed by application code
+- **No manual userId checks**: RLS policies automatically filter queries
+- **Consistent across all queries**: SELECT, INSERT, UPDATE, DELETE all enforced
+- **Defense in depth**: Even if API route forgets auth check, database blocks unauthorized access
 
 **Cascade Deletes**:
-- Delete course → delete all files → delete all stickers/QA/summaries
-- Delete file → delete all stickers/QA/summaries for that file
-- Configured via Prisma `onDelete: Cascade`
+- Delete course → automatically deletes all files → deletes all stickers/QA/summaries
+- Delete file → automatically deletes all stickers/QA/summaries for that file
+- Configured via `ON DELETE CASCADE` in foreign key constraints
 
 ---
 
@@ -1014,16 +1126,16 @@ student-aid/
 ├── .env.local (not committed)
 ├── .eslintrc.json
 ├── .gitignore
-├── next.config.js
+├── next.config.js (with Sentry webpack plugin)
 ├── package.json
 ├── pnpm-lock.yaml
 ├── postcss.config.js
 ├── tailwind.config.js
 ├── tsconfig.json
-├── prisma/
-│   ├── schema.prisma
-│   └── migrations/
-│       └── (auto-generated)
+├── sentry.server.config.ts (server-side error tracking)
+├── sentry.edge.config.ts (middleware error tracking)
+├── playwright.config.ts (E2E test configuration)
+├── vitest.config.ts (API test configuration)
 ├── public/
 │   └── (static assets)
 ├── docs/
@@ -1032,6 +1144,18 @@ student-aid/
 │   ├── 03_api_design.md
 │   ├── 04_tech_and_code_style.md
 │   └── 10_plan.md (this file)
+├── tests/
+│   ├── api/ (Vitest unit tests for API routes)
+│   │   ├── auth.test.ts
+│   │   ├── courses.test.ts
+│   │   ├── files.test.ts
+│   │   ├── ai.test.ts
+│   │   └── quotas.test.ts
+│   └── e2e/ (Playwright end-to-end tests)
+│       ├── auth.spec.ts
+│       ├── upload.spec.ts
+│       ├── ai-explain.spec.ts
+│       └── qa.spec.ts
 └── src/
     ├── app/
     │   ├── layout.tsx (root layout, providers)
@@ -1084,8 +1208,13 @@ student-aid/
     │       │   └── stickers/
     │       │       ├── route.ts
     │       │       └── [stickerId]/route.ts
-    │       └── quotas/
-    │           └── route.ts
+    │       ├── quotas/
+    │       │   ├── route.ts
+    │       │   └── tokens/
+    │       │       └── route.ts (NEW: token stats)
+    │       └── cron/
+    │           └── reset-quotas/
+    │               └── route.ts (NEW: quota reset cron)
     ├── middleware.ts
     ├── components/
     │   └── ui/
@@ -1180,9 +1309,14 @@ student-aid/
     │   │   │   ├── quota-overview.tsx
     │   │   │   ├── quota-progress-bar.tsx
     │   │   │   ├── quota-badge.tsx
-    │   │   │   └── reset-date-display.tsx
+    │   │   │   ├── reset-date-display.tsx
+    │   │   │   ├── token-usage-chart.tsx (NEW: bar chart)
+    │   │   │   ├── cost-breakdown.tsx (NEW: pie chart)
+    │   │   │   ├── token-timeline.tsx (NEW: line graph)
+    │   │   │   └── estimated-monthly-cost.tsx (NEW: projection)
     │   │   ├── hooks/
-    │   │   │   └── use-quota-overview.ts
+    │   │   │   ├── use-quota-overview.ts
+    │   │   │   └── use-token-stats.ts (NEW)
     │   │   └── api.ts
     │   └── layout/
     │       ├── components/
@@ -1192,7 +1326,10 @@ student-aid/
     │           └── use-layout-preferences.ts
     ├── lib/
     │   ├── supabase/
-    │   │   └── server.ts (createClient helper)
+    │   │   ├── server.ts (createClient helper)
+    │   │   ├── db.ts (typed query helpers)
+    │   │   └── migrations/
+    │   │       └── 001_initial_schema.sql
     │   ├── openai/
     │   │   ├── client.ts
     │   │   ├── streaming.ts
@@ -1201,7 +1338,7 @@ student-aid/
     │   │   │   ├── explain-selection.ts
     │   │   │   ├── qa.ts
     │   │   │   └── summarize.ts
-    │   │   └── cost-tracker.ts (optional, for monitoring)
+    │   │   └── cost-tracker.ts (REQUIRED for token tracking)
     │   ├── pdf/
     │   │   ├── detect-scanned.ts
     │   │   ├── hash.ts
@@ -1209,11 +1346,13 @@ student-aid/
     │   ├── quota/
     │   │   ├── check.ts
     │   │   ├── deduct.ts
-    │   │   └── reset.ts (cron job helper)
+    │   │   ├── reset.ts (cron job helper)
+    │   │   └── check-and-reset.ts (NEW: on-demand fallback)
+    │   ├── sentry/
+    │   │   └── config.ts (Sentry error handling helpers)
     │   ├── storage.ts (Supabase Storage helpers)
     │   ├── rate-limit.ts (Vercel KV wrapper)
     │   ├── api-client.ts (fetch wrapper)
-    │   ├── prisma.ts (singleton client)
     │   └── utils.ts (misc helpers)
     ├── types/
     │   ├── index.ts
@@ -1237,180 +1376,261 @@ student-aid/
 
 ---
 
-## DECISIONS NEEDED
+## CRITICAL ARCHITECTURE DECISIONS ✅ ALL CONFIRMED
 
 ### ✅ Confirmed Decisions (from user input):
-1. **ORM**: Prisma (type-safe, excellent DX)
+1. **Database**: Supabase Postgres with RLS (NO Prisma ORM)
 2. **Rate Limiting**: Vercel KV (Redis)
 3. **Resizable Layout**: react-resizable-panels
 4. **PDF Deduplication**: Yes, implement in MVP
-
-### 🔴 Remaining Critical Decisions:
-
-#### D1: Email Configuration
-**Question**: Use Supabase built-in email templates or custom SMTP?
-
-**Options**:
-1. **Supabase Default (Recommended)**: Use Supabase's built-in email service
-   - Pros: Zero config, works out of box, free tier included
-   - Cons: Limited customization, Supabase branding
-
-2. **Custom SMTP (Resend/SendGrid)**: Configure custom email provider
-   - Pros: Full branding control, better deliverability
-   - Cons: Extra setup, cost, need to handle templates
-
-3. **Hybrid**: Supabase for auth emails, custom for transactional
-   - Pros: Quick MVP start, can upgrade later
-   - Cons: Two email systems to manage
-
-**Recommendation**: Option 1 (Supabase Default) for MVP, migrate to Option 3 post-launch
+5. **Error Monitoring**: Sentry (server-side only)
+6. **Testing**: Vitest (API tests) + Playwright (E2E smoke tests)
+7. **Email**: Supabase built-in templates
+8. **Quota Reset**: Hybrid (Cron + on-demand)
+9. **Streaming**: Server-Sent Events (SSE)
+10. **Dev Environment**: Separate cloud projects (dev/staging/prod)
+11. **Token Tracking**: Real-time dashboard in P7
 
 ---
 
-#### D2: Quota Reset Strategy
-**Question**: How to implement monthly quota reset based on user registration anniversary?
+### Implementation Details
 
-**Options**:
-1. **Vercel Cron + Daily Check (Recommended)**:
-   - Cron runs daily at 00:00 UTC
-   - Queries users where `registration_day = today`
-   - Resets their quotas
-   - Pros: Simple, reliable, built into Vercel
-   - Cons: Not instant (up to 24h delay)
+#### D1: Email Configuration ✅ CONFIRMED
+**Decision**: Use Supabase built-in email templates
 
-2. **On-Demand Check**:
-   - Check `resetAt` on every quota-consuming API call
-   - Reset if expired
-   - Pros: No cron needed, instant reset
-   - Cons: Extra DB queries, race conditions possible
+**Implementation**:
+- Use Supabase Auth email templates for verification
+- Customize templates via Supabase dashboard
+- Zero additional configuration required
+- Can migrate to custom SMTP post-MVP if needed
 
-3. **Hybrid**:
-   - Cron for bulk reset
-   - On-demand as fallback
-   - Pros: Best reliability
-   - Cons: Most complexity
-
-**Recommendation**: Option 1 (Vercel Cron) for MVP simplicity
+**Rationale**: Fastest MVP path with zero setup overhead
 
 ---
 
-#### D3: Streaming Implementation
-**Question**: How to implement OpenAI streaming responses?
+#### D2: Quota Reset Strategy ✅ CONFIRMED
+**Decision**: Hybrid (Vercel Cron + On-demand fallback)
 
-**Options**:
-1. **Server-Sent Events (SSE) (Recommended)**:
-   - Next.js Route Handler returns `ReadableStream`
-   - Frontend uses `EventSource` or fetch with streaming
-   - Pros: Standard, built-in Next.js support, resumable
-   - Cons: Slightly more complex than polling
+**Implementation**:
 
-2. **WebSocket**:
-   - Use Socket.IO or native WebSocket
-   - Pros: Bidirectional, low latency
-   - Cons: Complex setup, doesn't fit serverless model well
+1. **Primary: Vercel Cron** runs daily at 00:00 UTC
+   - Queries users where `EXTRACT(DAY FROM created_at) = EXTRACT(DAY FROM NOW())`
+   - Bulk resets quotas for matching users
+   - Endpoint: `src/app/api/cron/reset-quotas/route.ts`
 
-3. **Long Polling**:
-   - Poll API every 500ms for updates
-   - Pros: Simplest implementation
-   - Cons: High latency, inefficient
+2. **Fallback: On-demand check** in quota deduction logic
+   - If `reset_at < NOW()`, reset quota before deducting
+   - Handles edge cases where cron missed a user
+   - Helper: `src/lib/quota/check-and-reset.ts`
 
-**Recommendation**: Option 1 (SSE) - well-supported in Next.js 14 App Router
+**Benefits**:
+- Dual redundancy for maximum reliability
+- Instant reset for edge cases
+- Simple cron implementation
 
----
-
-#### D4: Development Environment
-**Question**: Local Supabase or cloud-only?
-
-**Options**:
-1. **Cloud-Only (Recommended for MVP)**:
-   - Single Supabase project for dev/staging/prod
-   - Use environment variables to distinguish
-   - Pros: Zero Docker setup, consistent environment
-   - Cons: Shared database (use namespacing)
-
-2. **Local Supabase (Docker)**:
-   - Run Supabase locally via `supabase start`
-   - Pros: Isolated dev environment, no cloud quota limits
-   - Cons: Docker setup complexity, migration sync issues
-
-3. **Hybrid**:
-   - Local DB + cloud Auth/Storage
-   - Pros: Best of both
-   - Cons: Most complex
-
-**Recommendation**: Option 1 (Cloud-Only) for MVP, add Docker for post-MVP
+**Rationale**: Best reliability with minimal added complexity
 
 ---
 
-#### D5: Error Monitoring
-**Question**: Add error tracking (Sentry/Bugsnag) in MVP?
+#### D3: Streaming Implementation ✅ CONFIRMED
+**Decision**: Server-Sent Events (SSE) via Next.js ReadableStream
 
-**Options**:
-1. **No - Console Logs Only (Recommended for MVP)**:
-   - Use `console.error()` and Vercel logs
-   - Pros: Zero setup
-   - Cons: Manual log inspection
+**Implementation**:
+- Next.js Route Handlers return `ReadableStream`
+- Frontend uses `fetch` with streaming reader
+- OpenAI streaming chunks forwarded to client
+- Built-in Next.js 14 App Router support
 
-2. **Yes - Sentry**:
-   - Add Sentry SDK
-   - Pros: Error aggregation, stack traces, alerts
-   - Cons: Extra config, potential cost
+**Example**:
+```typescript
+// src/app/api/ai/explain-page/route.ts
+export async function POST(req: Request) {
+  const stream = await openai.chat.completions.create({
+    model: 'gpt-4-turbo-preview',
+    stream: true,
+    messages: [...]
+  })
 
-3. **Vercel Analytics**:
-   - Use built-in Vercel error tracking
-   - Pros: Native integration
-   - Cons: Limited features vs. Sentry
+  return new Response(
+    new ReadableStream({
+      async start(controller) {
+        for await (const chunk of stream) {
+          controller.enqueue(
+            new TextEncoder().encode(
+              `data: ${JSON.stringify(chunk)}\n\n`
+            )
+          )
+        }
+        controller.close()
+      }
+    }),
+    { headers: { 'Content-Type': 'text/event-stream' } }
+  )
+}
+```
 
-**Recommendation**: Option 1 for MVP, add Sentry in post-MVP
-
----
-
-#### D6: Testing Strategy
-**Question**: What testing approach for MVP?
-
-**Options**:
-1. **Manual Testing Only (Fastest MVP)**:
-   - No automated tests initially
-   - Manual QA before each deploy
-   - Pros: Zero test setup time
-   - Cons: Regression risk
-
-2. **API Route Tests Only (Recommended)**:
-   - Unit tests for API routes with Vitest
-   - Mock Prisma/Supabase/OpenAI
-   - Pros: Catches critical bugs, fast tests
-   - Cons: Some setup time
-
-3. **Full E2E (Playwright)**:
-   - End-to-end tests for critical flows
-   - Pros: Highest confidence
-   - Cons: Slow, flaky, high maintenance
-
-**Recommendation**: Option 2 (API tests only) - protect core logic without slowing MVP
+**Rationale**: Standard approach with excellent Next.js 14 support
 
 ---
 
-#### D7: OpenAI Token Tracking
-**Question**: Implement detailed token usage tracking?
+#### D4: Development Environment ✅ CONFIRMED
+**Decision**: Cloud-only Supabase with separate projects for dev/staging/prod
 
-**Options**:
-1. **No Tracking (Simplest MVP)**:
-   - Just deduct quota, ignore token counts
-   - Pros: Minimal code
-   - Cons: No cost visibility
+**Implementation**:
+- Create 3 Supabase projects:
+  - `studentaid-dev` (development)
+  - `studentaid-staging` (testing)
+  - `studentaid-prod` (production)
 
-2. **Log Only (Recommended)**:
-   - Write token counts to `ai_usage_logs` table
-   - No real-time dashboard
-   - Pros: Data for future analysis, low overhead
-   - Cons: Can't see costs in real-time
+- Environment-specific `.env` files:
+  - `.env.local` (dev)
+  - `.env.staging` (staging)
+  - `.env.production` (prod)
 
-3. **Real-Time Dashboard**:
-   - Track tokens + costs, show in P7
-   - Pros: Full cost visibility
-   - Cons: Extra complexity, not user-facing
+- Database migrations:
+  - Develop in `dev` project
+  - Test in `staging` project
+  - Deploy to `prod` via Supabase CLI
 
-**Recommendation**: Option 2 (Log Only) - gather data without UI overhead
+**Benefits**:
+- Isolated data per environment
+- No Docker setup complexity
+- Consistent cloud environment
+- Easy rollback and migration testing
+
+**Rationale**: Maximum isolation without Docker complexity
+
+---
+
+#### D5: Error Monitoring ✅ CONFIRMED
+**Decision**: Add Sentry for server-side error tracking
+
+**Implementation**:
+
+1. Install `@sentry/nextjs@^7.99.0`
+2. Configure server-side only (no client bundle bloat)
+3. Track errors in:
+   - API routes
+   - Server components
+   - Middleware
+   - Background jobs (cron)
+
+**Configuration**:
+```typescript
+// sentry.server.config.ts
+import * as Sentry from '@sentry/nextjs'
+
+Sentry.init({
+  dsn: process.env.SENTRY_DSN,
+  environment: process.env.NODE_ENV,
+  tracesSampleRate: 0.1, // 10% performance monitoring
+  enabled: process.env.NODE_ENV === 'production',
+  integrations: [
+    new Sentry.Integrations.Postgres(),
+  ]
+})
+```
+
+**Features**:
+- Error aggregation and deduplication
+- Stack traces with source maps
+- Performance monitoring (API latency)
+- Alerts for critical errors
+- No client-side tracking (privacy-focused)
+
+**Rationale**: Critical for production debugging without manual log inspection
+
+---
+
+#### D6: Testing Strategy ✅ CONFIRMED
+**Decision**: API route unit tests + minimal E2E smoke tests
+
+**Implementation**:
+
+1. **API Route Tests** (Vitest):
+   - Unit tests for all API endpoints
+   - Mock Supabase and OpenAI
+   - Test quota enforcement, auth, validation
+   - Run on every commit
+
+2. **E2E Smoke Tests** (Playwright):
+   - Critical user flows only:
+     - Register → Email verification → Login
+     - Create course → Upload PDF → View in reader
+     - Explain page → Generate sticker → Collapse/expand
+     - Q&A → Ask question → Get answer
+   - Run on every deploy to staging/prod
+   - Headless mode for CI/CD
+
+**Files**:
+- `tests/api/**/*.test.ts` (Vitest API tests)
+- `tests/e2e/**/*.spec.ts` (Playwright E2E tests)
+
+**Scripts**:
+```json
+{
+  "scripts": {
+    "test": "vitest",
+    "test:e2e": "playwright test",
+    "test:ci": "vitest run && playwright test"
+  }
+}
+```
+
+**Rationale**: Comprehensive coverage without excessive maintenance burden
+
+---
+
+#### D7: OpenAI Token Tracking ✅ CONFIRMED
+**Decision**: Implement real-time token tracking dashboard in P7 (M8)
+
+**Implementation**:
+
+1. **Token Logging** (all AI operations):
+   - Log to `ai_usage_logs` table:
+     - `input_tokens`, `output_tokens`
+     - `cost_usd_approx` (calculated)
+     - `operation_type`, `model`, `latency_ms`
+
+2. **Cost Calculation**:
+```typescript
+// lib/openai/cost-tracker.ts
+const PRICING = {
+  'gpt-4-turbo-preview': { input: 0.01 / 1000, output: 0.03 / 1000 },
+  'gpt-4': { input: 0.03 / 1000, output: 0.06 / 1000 },
+  'gpt-3.5-turbo-16k': { input: 0.003 / 1000, output: 0.004 / 1000 }
+}
+
+export function calculateCost(model: string, inputTokens: number, outputTokens: number) {
+  const pricing = PRICING[model]
+  return inputTokens * pricing.input + outputTokens * pricing.output
+}
+```
+
+3. **Dashboard Components** (expanded M8):
+   - `QuotaOverview` (existing)
+   - **NEW**: `TokenUsageChart` - Bar chart of tokens by operation type
+   - **NEW**: `CostBreakdown` - Pie chart of costs by quota bucket
+   - **NEW**: `TokenTimeline` - Line graph of token usage over time
+   - **NEW**: `EstimatedMonthlyCost` - Projection based on current usage
+
+4. **API Endpoint**:
+   - `GET /api/quotas/tokens` - Returns aggregated token stats:
+     ```json
+     {
+       "totalTokens": 125000,
+       "totalCost": 3.75,
+       "byOperation": {
+         "autoExplain": { "tokens": 50000, "cost": 1.50 },
+         "selectionExplain": { "tokens": 30000, "cost": 0.90 },
+         "qa": { "tokens": 25000, "cost": 0.75 },
+         "documentSummary": { "tokens": 20000, "cost": 0.60 }
+       },
+       "monthlyProjection": 7.50
+     }
+     ```
+
+**Rationale**: Essential for cost monitoring and user transparency
 
 ---
 
@@ -1583,21 +1803,27 @@ student-aid/
 
 **Pre-Launch**:
 - [ ] Test all P1-P5 pages in Chrome, Firefox, Safari
+- [ ] **E2E smoke tests pass** (Playwright): Register → Upload PDF → Explain → Q&A
 - [ ] Load test: 10 concurrent users, 50 requests/min
 - [ ] Security audit: SQL injection, XSS, CSRF checks
+- [ ] **RLS verification**: Test cross-user data access blocked (different auth tokens)
 - [ ] Quota enforcement: Verify 429 responses at limits
 - [ ] Email delivery: Test verification, resend rate limiting
 - [ ] PDF uploads: Test 10 file types, edge cases (0 pages, 1000 pages, scanned)
 - [ ] AI streaming: First token < 2s, full response < 10s
+- [ ] **Sentry error capture**: Trigger test error, verify in Sentry dashboard
 - [ ] Session expiry: Graceful logout, redirect preservation
 - [ ] Mobile responsive: Test on 375px width (iPhone SE)
 - [ ] Accessibility: Keyboard nav, screen reader labels
+- [ ] **Token cost tracking**: Verify dashboard shows accurate token counts and costs
 
 **Post-Launch Monitoring**:
+- [ ] **Sentry alerts** configured for critical errors (5xx, auth failures, quota exceeded)
 - [ ] Set up Vercel log alerts for 5xx errors
 - [ ] Monitor Supabase dashboard for DB connection pool exhaustion
-- [ ] Track OpenAI API costs daily (set budget alert)
-- [ ] Monitor quota reset cron job (should run daily)
+- [ ] Track OpenAI API costs daily (set budget alert, compare with dashboard projection)
+- [ ] Monitor quota reset cron job (should run daily at 00:00 UTC)
+- [ ] **E2E test suite** passes on every deploy to staging/prod
 - [ ] Check user feedback for common pain points
 
 ---
@@ -1616,9 +1842,11 @@ student-aid/
 - M5: AI stickers (P5 middle panel)
 - M6: Q&A & summaries (P5 right panel)
 
-### Phase 4: Polish (Week 6)
+### Phase 4: Polish & Monitoring (Week 6)
 - M7: Course outline (P6) [Optional]
-- M8: Usage dashboard (P7) [Optional]
+- M8: Usage & token tracking dashboard (P7) [Required per D7]
+- Test suite: API unit tests + E2E smoke tests
+- Sentry integration and error monitoring setup
 - Bug fixes, performance optimization
 - User testing & feedback
 
@@ -1637,26 +1865,35 @@ student-aid/
 8. Responsive design works on desktop (mobile best-effort)
 
 **Post-MVP Goals**:
-- P6/P7 optional features
-- E2E testing with Playwright
-- Error monitoring with Sentry
-- Local Supabase development
+- Custom SMTP for emails (Resend/SendGrid)
+- Advanced token analytics (cost breakdown by user, trend analysis)
+- Local Supabase development environment (Docker)
 - Advanced rate limiting (per-route, adaptive)
-- OCR for scanned PDFs
-- Mobile optimization
+- OCR for scanned PDFs (Tesseract.js integration)
+- Mobile-first optimization and native app consideration
+- Real-time collaboration features
+- Advanced PDF annotations and highlights
 
 ---
 
 ## APPENDIX A: Environment Variables
 
 ```bash
-# === Supabase ===
-NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+# === Supabase (Environment-specific projects) ===
+# Development
+NEXT_PUBLIC_SUPABASE_URL=https://xxx-dev.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
 SUPABASE_SERVICE_ROLE_KEY=eyJhbG...
 
-# === Database (Supabase Postgres) ===
-DATABASE_URL=postgresql://postgres:[YOUR-PASSWORD]@db.xxx.supabase.co:5432/postgres
+# Staging (use .env.staging)
+# NEXT_PUBLIC_SUPABASE_URL=https://xxx-staging.supabase.co
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
+# SUPABASE_SERVICE_ROLE_KEY=eyJhbG...
+
+# Production (use .env.production)
+# NEXT_PUBLIC_SUPABASE_URL=https://xxx-prod.supabase.co
+# NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
+# SUPABASE_SERVICE_ROLE_KEY=eyJhbG...
 
 # === OpenAI ===
 OPENAI_API_KEY=sk-proj-...
@@ -1667,6 +1904,13 @@ KV_URL=redis://...
 KV_REST_API_URL=https://...
 KV_REST_API_TOKEN=...
 KV_REST_API_READ_ONLY_TOKEN=...
+
+# === Sentry (Error Monitoring) ===
+SENTRY_DSN=https://xxx@xxx.ingest.sentry.io/xxx
+SENTRY_AUTH_TOKEN=xxx  # For source map uploads
+SENTRY_ORG=your-org
+SENTRY_PROJECT=studentaid
+NEXT_PUBLIC_SENTRY_ENVIRONMENT=development  # or staging/production
 
 # === Quota Configuration ===
 COURSE_LIMIT=6
@@ -1681,9 +1925,8 @@ ENABLE_AUTO_EXPLAIN=true
 ENABLE_STREAMING=true
 ENABLE_PDF_DEDUP=true
 
-# === Monitoring (Optional) ===
-SENTRY_DSN=https://...  # Post-MVP
-VERCEL_ANALYTICS_ID=...  # Built-in
+# === Monitoring ===
+VERCEL_ANALYTICS_ID=...  # Built-in Vercel analytics
 
 # === Build Info ===
 NEXT_PUBLIC_BUILD_VERSION=0.1.0-mvp
@@ -1698,8 +1941,7 @@ NEXT_PUBLIC_BUILD_VERSION=0.1.0-mvp
 | **Framework** | next | ^14.2.0 | App Router, SSR, API routes |
 | | react | ^18.3.0 | UI library |
 | | typescript | ^5.3.0 | Type safety |
-| **Database** | @prisma/client | ^5.9.0 | ORM |
-| | @supabase/supabase-js | ^2.39.0 | Supabase SDK |
+| **Database** | @supabase/supabase-js | ^2.39.0 | Supabase SDK (query builder) |
 | | @supabase/ssr | ^0.1.0 | Server-side auth |
 | **AI** | openai | ^4.28.0 | OpenAI API |
 | **PDF** | react-pdf | ^7.7.0 | PDF rendering |
@@ -1714,6 +1956,9 @@ NEXT_PUBLIC_BUILD_VERSION=0.1.0-mvp
 | | react-resizable-panels | ^2.0.0 | Resizable layout |
 | | react-window | ^1.8.10 | Virtual scrolling |
 | | @tanstack/react-query | ^5.28.0 | Server state |
+| **Monitoring** | @sentry/nextjs | ^7.99.0 | Error tracking (server-side) |
+| **Testing** | vitest | ^1.2.0 | API route unit tests |
+| | @playwright/test | ^1.40.0 | E2E smoke tests |
 | **Infra** | @vercel/kv | ^1.0.1 | Rate limiting |
 | | zod | ^3.22.4 | Schema validation |
 
@@ -1721,11 +1966,12 @@ NEXT_PUBLIC_BUILD_VERSION=0.1.0-mvp
 
 ## NEXT STEPS
 
-1. **User Confirmation**: Review this plan, confirm all decisions
+1. **User Confirmation**: ✅ All architecture decisions confirmed
 2. **Repository Setup**: Initialize Next.js project with dependencies
-3. **Supabase Setup**: Create project, configure Auth/Storage
-4. **Prisma Migration**: Run `prisma migrate dev` to create schema
-5. **Start Implementation**: Begin with M1 (Project Setup)
+3. **Supabase Setup**: Create 3 projects (dev/staging/prod), configure Auth/Storage
+4. **Database Migration**: Run SQL migration `001_initial_schema.sql` via Supabase CLI
+5. **Sentry Setup**: Create Sentry project, configure DSN and source maps
+6. **Start Implementation**: Begin with M1 (Project Setup)
 
 ---
 
