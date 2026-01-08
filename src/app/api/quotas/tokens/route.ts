@@ -8,6 +8,9 @@ import {
   formatCost,
 } from '@/lib/openai/cost-tracker'
 
+// Force dynamic rendering for this route
+export const dynamic = 'force-dynamic'
+
 // Default quota limits per bucket
 const DEFAULT_LIMITS: Record<string, number> = {
   learningInteractions: 150,
