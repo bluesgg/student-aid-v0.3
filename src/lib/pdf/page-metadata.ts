@@ -3,7 +3,7 @@
  * Used for determining cache keys before lookup.
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 
 // Re-export pdf-parse types we need
 const pdf = require('pdf-parse') as (
@@ -122,6 +122,7 @@ export async function detectPageMetadata(
 /**
  * Get or create page metadata from database.
  * Caches metadata in canonical_page_metadata table.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param pdfHash - SHA-256 hash of PDF binary content
  * @param page - 1-indexed page number
@@ -133,7 +134,8 @@ export async function getOrCreatePageMetadata(
   page: number,
   pdfBuffer?: Buffer
 ): Promise<PageMetadata> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   // Try to get from cache
   const { data: cached } = await supabase
