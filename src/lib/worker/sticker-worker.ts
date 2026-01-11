@@ -9,6 +9,9 @@
 
 import { createAdminClient } from '@/lib/supabase/server'
 import { completeGeneration, failGeneration, PROMPT_VERSION } from '@/lib/stickers/shared-cache'
+import { extractPageText } from '@/lib/pdf/extract'
+import { getOpenAIClient, DEFAULT_MODEL } from '@/lib/openai/client'
+import { buildExplainPagePrompt, parseExplainPageResponse } from '@/lib/openai/prompts/explain-page'
 
 /**
  * Worker configuration
@@ -184,7 +187,7 @@ export async function pickupJobs(workerId: string, limit: number = WORKER_CONFIG
 
 /**
  * Process a single sticker generation job.
- * This is a placeholder that should be replaced with actual generation logic.
+ * Downloads PDF, extracts page text, calls OpenAI, and stores results.
  */
 export async function processJob(job: StickerJob): Promise<void> {
   // Use admin client to bypass RLS
@@ -192,19 +195,10 @@ export async function processJob(job: StickerJob): Promise<void> {
   const startTime = Date.now()
 
   try {
-    // TODO: Implement actual sticker generation logic
-    // For now, we'll create a placeholder implementation
-    // The actual implementation should:
-    // 1. Download PDF from storage
-    // 2. Extract page text and images
-    // 3. Build prompt with context
-    // 4. Call OpenAI API
-    // 5. Parse response into stickers
-    
-    // Placeholder: Get the file with this content_hash
+    // Step 1: Get a file with this content_hash
     const { data: file } = await supabase
       .from('files')
-      .select('id, storage_key, page_count')
+      .select('id, storage_key, page_count, type')
       .eq('content_hash', job.pdf_hash)
       .limit(1)
       .single()
@@ -213,18 +207,80 @@ export async function processJob(job: StickerJob): Promise<void> {
       throw new Error('File not found for pdf_hash: ' + job.pdf_hash)
     }
 
-    // For now, mark as failed with "not implemented" message
-    // This will be replaced with actual generation logic in Phase 4
-    throw new Error('Sticker generation not yet implemented - pending Phase 4 API update')
+    // Step 2: Download PDF from storage
+    const { data: pdfData, error: downloadError } = await supabase.storage
+      .from('course-files')
+      .download(file.storage_key)
+
+    if (downloadError || !pdfData) {
+      throw new Error('Failed to download PDF: ' + (downloadError?.message || 'Unknown error'))
+    }
+
+    // Step 3: Extract page text
+    const buffer = Buffer.from(await pdfData.arrayBuffer())
+    const { text: pageText } = await extractPageText(buffer, job.page)
+
+    if (!pageText || pageText.length < 50) {
+      throw new Error('Insufficient text content on page ' + job.page)
+    }
+
+    // Step 4: Build prompt
+    const pdfType = (file.type as 'Lecture' | 'Homework' | 'Exam' | 'Other') || 'Other'
+    const prompt = buildExplainPagePrompt({
+      pageText,
+      pageNumber: job.page,
+      pdfType,
+      totalPages: file.page_count,
+    })
+
+    // Step 5: Call OpenAI API
+    const openai = getOpenAIClient()
+    const completion = await openai.chat.completions.create({
+      model: DEFAULT_MODEL,
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      temperature: 0.7,
+      max_tokens: 4000,
+    })
+
+    const responseContent = completion.choices[0]?.message?.content
+    if (!responseContent) {
+      throw new Error('AI did not return a response')
+    }
+
+    // Step 6: Parse the response
+    const parsed = parseExplainPageResponse(responseContent)
+    
+    if (!parsed.explanations || parsed.explanations.length === 0) {
+      throw new Error('AI returned no explanations')
+    }
+
+    // Step 7: Format stickers for storage
+    const stickers = parsed.explanations.map((exp) => ({
+      anchorText: exp.anchorText,
+      explanation: exp.explanation,
+    }))
+
+    // Step 8: Complete generation
+    const generationTimeMs = Date.now() - startTime
+    await completeGeneration(job.id, stickers, undefined, generationTimeMs)
+
+    console.log(`[Worker] Job ${job.id} completed in ${generationTimeMs}ms with ${stickers.length} stickers`)
 
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : String(error)
     const errorType = classifyError(error)
-    const generationTimeMs = Date.now() - startTime
 
     if (errorType === 'permanent' || job.attempts >= WORKER_CONFIG.MAX_ATTEMPTS - 1) {
       // Permanent error or max attempts reached - fail and refund
       await failGeneration(job.id, errorMessage, true)
+      console.log(`[Worker] Job ${job.id} failed permanently: ${errorMessage}`)
     } else {
       // Transient error - schedule retry
       const retryDelay = calculateRetryDelay(job.attempts)
@@ -240,6 +296,8 @@ export async function processJob(job: StickerJob): Promise<void> {
           lock_owner: null,
         })
         .eq('id', job.id)
+
+      console.log(`[Worker] Job ${job.id} retry scheduled for ${runAfter}: ${errorMessage}`)
     }
 
     throw error // Re-throw for caller to handle
