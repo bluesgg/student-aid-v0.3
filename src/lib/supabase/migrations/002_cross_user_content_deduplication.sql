@@ -255,8 +255,8 @@ COMMENT ON TABLE sticker_latency_samples IS 'Raw latency samples for P95 calcula
 -- Indexes for latency samples
 CREATE INDEX idx_latency_samples_date ON sticker_latency_samples(created_at DESC);
 CREATE INDEX idx_latency_samples_aggregation ON sticker_latency_samples(effective_mode, created_at);
-CREATE INDEX idx_latency_samples_cleanup ON sticker_latency_samples(created_at)
-  WHERE created_at < NOW() - INTERVAL '14 days';
+-- Note: Cleanup queries use idx_latency_samples_date index
+-- Query pattern: DELETE FROM sticker_latency_samples WHERE created_at < NOW() - INTERVAL '14 days'
 
 -- ==================== USER PREFERENCES ====================
 -- User opt-out mechanism for shared cache
@@ -437,5 +437,4 @@ CREATE POLICY "Service role only for sticker_metrics" ON sticker_metrics
 --   - Key strategy changed (chunking, merging, image analysis logic)
 
 COMMENT ON TABLE shared_auto_stickers IS 
-  'Shared cache for auto-generated stickers. Current prompt_version: 2026-01-11.1. ' ||
-  'Bump version when: prompt template changes, output structure changes, or key strategy changes.';
+  'Shared cache for auto-generated stickers. Current prompt_version: 2026-01-11.1. Bump version when: prompt template changes, output structure changes, or key strategy changes.';
