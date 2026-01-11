@@ -7,7 +7,7 @@
  * - Adaptive timeout based on content complexity
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { completeGeneration, failGeneration, PROMPT_VERSION } from '@/lib/stickers/shared-cache'
 
 /**
@@ -135,7 +135,8 @@ export function calculateRetryDelay(attempts: number): number {
  * Pick up jobs for processing using FOR UPDATE SKIP LOCKED
  */
 export async function pickupJobs(workerId: string, limit: number = WORKER_CONFIG.BATCH_SIZE): Promise<StickerJob[]> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
   const now = new Date().toISOString()
   const lockTimeout = new Date(Date.now() - WORKER_CONFIG.LOCK_TIMEOUT_MINUTES * 60 * 1000).toISOString()
 
@@ -186,7 +187,8 @@ export async function pickupJobs(workerId: string, limit: number = WORKER_CONFIG
  * This is a placeholder that should be replaced with actual generation logic.
  */
 export async function processJob(job: StickerJob): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
   const startTime = Date.now()
 
   try {
@@ -248,7 +250,8 @@ export async function processJob(job: StickerJob): Promise<void> {
  * Clean up zombie jobs (expired generating jobs)
  */
 export async function cleanupZombies(): Promise<number> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
   const now = new Date().toISOString()
 
   // Find expired jobs

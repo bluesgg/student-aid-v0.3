@@ -3,7 +3,7 @@
  * Provides cross-user deduplication for AI-generated stickers.
  */
 
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { calculateExpirationSeconds } from '@/lib/pdf/page-metadata'
 
 /**
@@ -81,6 +81,7 @@ export async function checkUserSharePreference(userId: string): Promise<boolean>
 
 /**
  * Check shared cache for existing stickers.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param pdfHash - SHA-256 hash of PDF binary content
  * @param page - 1-indexed page number
@@ -94,7 +95,8 @@ export async function checkSharedCache(
   locale: StickerLocale,
   effectiveMode: EffectiveMode
 ): Promise<CacheLookupResult> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   // Query for existing cache entry with current prompt version
   const { data } = await supabase
@@ -137,6 +139,7 @@ export async function checkSharedCache(
 /**
  * Try to start a new generation job.
  * Uses DB unique constraint for single-flight pattern.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param params - Generation parameters
  * @returns StartGenerationResult with started flag and generationId
@@ -162,7 +165,8 @@ export async function tryStartGeneration(params: {
     estimatedChunks = 1,
   } = params
 
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   // Calculate dynamic expiration
   const expirationSeconds = calculateExpirationSeconds(imagesCount, estimatedChunks)
@@ -228,12 +232,14 @@ export async function tryStartGeneration(params: {
 /**
  * Get generation status by ID.
  * Used for client polling.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param generationId - UUID of the generation job
  * @returns GenerationStatusResult
  */
 export async function getGenerationStatus(generationId: string): Promise<GenerationStatusResult> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('shared_auto_stickers')
@@ -259,6 +265,7 @@ export async function getGenerationStatus(generationId: string): Promise<Generat
 /**
  * Complete a generation job successfully.
  * Called by worker after generating stickers.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param generationId - UUID of the generation job
  * @param stickers - Generated stickers array
@@ -271,7 +278,8 @@ export async function completeGeneration(
   imageSummaries?: unknown,
   generationTimeMs?: number
 ): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('shared_auto_stickers')
@@ -296,6 +304,7 @@ export async function completeGeneration(
  * Mark a generation job as failed.
  * Called by worker on generation error.
  * Also triggers quota refund.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param generationId - UUID of the generation job
  * @param errorMessage - Error message
@@ -306,7 +315,8 @@ export async function failGeneration(
   errorMessage: string,
   shouldRefund: boolean = true
 ): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   // Update job status
   const { error: updateError } = await supabase
@@ -344,6 +354,7 @@ export async function failGeneration(
 /**
  * UPSERT canonical document record.
  * Creates or updates the global PDF registry entry.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param pdfHash - SHA-256 hash of PDF binary content
  * @param totalPages - Total number of pages in PDF
@@ -354,7 +365,8 @@ export async function upsertCanonicalDocument(
   totalPages?: number,
   metadata?: Record<string, unknown>
 ): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   const { error } = await supabase.from('canonical_documents').upsert(
     {
@@ -379,12 +391,14 @@ export async function upsertCanonicalDocument(
  * Add a reference edge from a file to a canonical document.
  * Uses UNIQUE constraint for idempotent operations.
  * Triggers automatic reference_count increment.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param pdfHash - SHA-256 hash of PDF binary content
  * @param fileId - UUID of the file
  */
 export async function addCanonicalRef(pdfHash: string, fileId: string): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   // INSERT with ON CONFLICT DO NOTHING for idempotency
   // The trigger will increment reference_count
@@ -410,11 +424,13 @@ export async function addCanonicalRef(pdfHash: string, fileId: string): Promise<
 /**
  * Remove a reference edge from a file to a canonical document.
  * Triggers automatic reference_count decrement.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param fileId - UUID of the file
  */
 export async function removeCanonicalRef(fileId: string): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   const { error } = await supabase
     .from('canonical_document_refs')
@@ -430,6 +446,7 @@ export async function removeCanonicalRef(fileId: string): Promise<void> {
 
 /**
  * Record a latency sample for monitoring.
+ * Uses admin client to bypass RLS (service_role only table).
  * 
  * @param params - Latency sample parameters
  */
@@ -443,7 +460,8 @@ export async function recordLatencySample(params: {
   chunks?: number
   cacheHit?: boolean
 }): Promise<void> {
-  const supabase = createClient()
+  // Use admin client to bypass RLS
+  const supabase = createAdminClient()
 
   const { error } = await supabase.from('sticker_latency_samples').insert({
     pdf_hash: params.pdfHash,
