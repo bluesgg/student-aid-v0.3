@@ -3,9 +3,10 @@ import { createClient } from '@/lib/supabase/server'
 import { successResponse, errors } from '@/lib/api-response'
 import { extractPdfInfo } from '@/lib/pdf/extract'
 import { isScannedPdf } from '@/lib/pdf/detect-scanned'
-import { generateContentHash } from '@/lib/pdf/hash'
+import { generateContentHash, calculatePDFBinaryHash } from '@/lib/pdf/hash'
 import { generateStorageKey, uploadFile } from '@/lib/storage'
 import { fileTypeSchema } from '@/lib/validations/course'
+import { upsertCanonicalDocument, addCanonicalRef } from '@/lib/stickers/shared-cache'
 
 interface RouteParams {
   params: { courseId: string }
@@ -139,8 +140,11 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     // Check if file is scanned
     const isScanned = isScannedPdf(pdfInfo.textContent, pdfInfo.pageCount)
 
-    // Generate content hash
-    const contentHash = generateContentHash(pdfInfo.textContent)
+    // Generate content hashes
+    // Text-based hash for backwards compatibility
+    const textContentHash = generateContentHash(pdfInfo.textContent)
+    // Binary hash for cross-user deduplication
+    const binaryContentHash = calculatePDFBinaryHash(buffer)
 
     // Check for existing file with same name
     const { data: existing } = await supabase
@@ -165,7 +169,18 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       return errors.internalError('Failed to upload file to storage')
     }
 
-    // Create file record
+    // UPSERT canonical document for cross-user deduplication
+    try {
+      await upsertCanonicalDocument(binaryContentHash, pdfInfo.pageCount, {
+        originalName: name,
+        uploadedBy: user.id,
+      })
+    } catch (canonicalError) {
+      console.error('Error upserting canonical document:', canonicalError)
+      // Non-fatal: continue with file creation even if canonical upsert fails
+    }
+
+    // Create file record with binary content_hash for shared cache
     const { data: fileRecord, error: insertError } = await supabase
       .from('files')
       .insert({
@@ -175,7 +190,8 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
         type: typeResult.data,
         page_count: pdfInfo.pageCount,
         is_scanned: isScanned,
-        pdf_content_hash: contentHash,
+        pdf_content_hash: textContentHash,
+        content_hash: binaryContentHash, // Binary hash for shared cache
         storage_key: storageKey,
       })
       .select()
@@ -184,6 +200,14 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
     if (insertError) {
       console.error('Error creating file record:', insertError)
       return errors.internalError()
+    }
+
+    // Add canonical document reference (triggers reference_count increment)
+    try {
+      await addCanonicalRef(binaryContentHash, fileRecord.id)
+    } catch (refError) {
+      console.error('Error adding canonical ref:', refError)
+      // Non-fatal: file was created, canonical ref is optional for MVP
     }
 
     return successResponse(
