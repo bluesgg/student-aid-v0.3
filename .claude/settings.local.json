@@ -8,7 +8,21 @@
       "Bash(pnpm lint:*)",
       "Bash(pnpm build:*)",
       "Bash(pnpm remove:*)",
-      "Bash(mkdir:*)"
+      "Bash(mkdir:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push)",
+      "Bash(pnpm dev)",
+      "Bash(openspec list:*)",
+      "Bash(openspec validate:*)",
+      "Bash(openspec show:*)",
+      "Bash(openspec archive add-term-dropdown:*)",
+      "Skill(openspec:proposal)",
+      "Skill(openspec:proposal:*)",
+      "Bash(gh pr list:*)"
+    ],
+    "additionalDirectories": [
+      "e:\\cursor_project\\Student Aid-0.2\\openspec\\changes\\add-term-dropdown\\specs"
     ]
   }
 }

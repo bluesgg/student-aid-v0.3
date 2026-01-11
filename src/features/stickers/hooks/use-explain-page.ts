@@ -26,9 +26,9 @@ export function useExplainPage() {
       return { ...result.data, fileId: params.fileId }
     },
     onSuccess: (data, variables) => {
-      // Update stickers cache
+      // Update stickers cache - use undefined as third param to match useStickers(fileId) call
       queryClient.setQueryData(
-        ['stickers', variables.fileId],
+        ['stickers', variables.fileId, undefined],
         (old: { items: stickersApi.Sticker[] } | undefined) => {
           if (!old) {
             return { items: data.stickers }
@@ -44,6 +44,9 @@ export function useExplainPage() {
           }
         }
       )
+
+      // Also invalidate to ensure fresh data from server
+      queryClient.invalidateQueries({ queryKey: ['stickers', variables.fileId] })
 
       // Update quotas cache
       queryClient.setQueryData(['quotas'], (old: Record<string, unknown> | undefined) => {

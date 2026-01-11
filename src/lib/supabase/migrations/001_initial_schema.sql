@@ -270,6 +270,44 @@ CREATE TRIGGER update_file_count_on_delete
   AFTER DELETE ON files
   FOR EACH ROW EXECUTE FUNCTION update_course_file_count();
 
+-- Function to atomically increment quota used count
+-- Returns the updated quota record
+CREATE OR REPLACE FUNCTION increment_quota_used(
+  p_user_id UUID,
+  p_bucket quota_bucket
+)
+RETURNS TABLE (used INTEGER, "limit" INTEGER, reset_at TIMESTAMPTZ) AS $$
+DECLARE
+  v_reset_at TIMESTAMPTZ;
+  v_limit INTEGER;
+BEGIN
+  -- Calculate default reset date (1 month from now at midnight)
+  v_reset_at := date_trunc('day', NOW() + INTERVAL '1 month');
+
+  -- Get default limit based on bucket
+  v_limit := CASE p_bucket
+    WHEN 'learningInteractions' THEN 150
+    WHEN 'documentSummary' THEN 100
+    WHEN 'sectionSummary' THEN 65
+    WHEN 'courseSummary' THEN 15
+    WHEN 'autoExplain' THEN 300
+    ELSE 100
+  END;
+
+  -- Insert or update with atomic increment
+  INSERT INTO quotas (user_id, bucket, used, "limit", reset_at)
+  VALUES (p_user_id, p_bucket, 1, v_limit, v_reset_at)
+  ON CONFLICT (user_id, bucket)
+  DO UPDATE SET
+    used = quotas.used + 1,
+    updated_at = NOW()
+  RETURNING quotas.used, quotas."limit", quotas.reset_at
+  INTO used, "limit", reset_at;
+
+  RETURN NEXT;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
 -- ==================== STORAGE BUCKET ====================
 -- Note: Run this in Supabase SQL Editor after enabling Storage
 

@@ -94,8 +94,10 @@ export async function POST(request: NextRequest) {
             textSnippet: s.anchor_text,
             rect: s.anchor_rect,
           },
+          parentId: s.parent_id,
           contentMarkdown: s.content_markdown,
           folded: s.folded,
+          depth: s.depth,
           createdAt: s.created_at,
         })),
         quota: {
@@ -212,8 +214,10 @@ export async function POST(request: NextRequest) {
           textSnippet: s.anchor_text,
           rect: s.anchor_rect,
         },
+        parentId: s.parent_id,
         contentMarkdown: s.content_markdown,
         folded: s.folded,
+        depth: s.depth,
         createdAt: s.created_at,
       })),
       quota: {

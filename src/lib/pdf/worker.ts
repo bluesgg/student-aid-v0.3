@@ -6,7 +6,7 @@
 import { pdfjs } from 'react-pdf'
 
 // Configure the PDF.js worker
-// Using the CDN for simplicity and cross-browser compatibility
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.mjs`
+// Use local worker file from public folder for reliability
+pdfjs.GlobalWorkerOptions.workerSrc = '/pdf.worker.min.js'
 
 export { pdfjs }

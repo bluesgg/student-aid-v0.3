@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useCreateCourse } from '../hooks/use-courses'
+import { getCurrentTerm, getTermOptions } from '@/lib/terms'
 
 interface CreateCourseDialogProps {
   isOpen: boolean
@@ -11,9 +12,10 @@ interface CreateCourseDialogProps {
 export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps) {
   const [name, setName] = useState('')
   const [school, setSchool] = useState('')
-  const [term, setTerm] = useState('')
+  const [term, setTerm] = useState(getCurrentTerm())
 
   const createCourse = useCreateCourse()
+  const termOptions = getTermOptions()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -23,7 +25,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
         onSuccess: () => {
           setName('')
           setSchool('')
-          setTerm('')
+          setTerm(getCurrentTerm())
           onClose()
         },
       }
@@ -92,15 +94,19 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
             >
               Term
             </label>
-            <input
+            <select
               id="term"
-              type="text"
               value={term}
               onChange={(e) => setTerm(e.target.value)}
               className="input"
-              placeholder="e.g., Spring 2025"
               required
-            />
+            >
+              {termOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex gap-3 pt-2">

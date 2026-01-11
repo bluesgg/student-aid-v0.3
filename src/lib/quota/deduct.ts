@@ -28,8 +28,9 @@ export async function deductQuota(
 
   if (error) {
     // If the RPC doesn't exist, fall back to manual update
-    if (error.code === '42883') {
-      // function does not exist
+    // 42883 = PostgreSQL "function does not exist"
+    // PGRST202 = PostgREST "function not found in schema cache"
+    if (error.code === '42883' || error.code === 'PGRST202') {
       return fallbackDeductQuota(supabase, userId, bucket)
     }
     console.error('Error deducting quota:', error)
