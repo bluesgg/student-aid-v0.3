@@ -2,6 +2,7 @@ import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { successResponse, errors } from '@/lib/api-response'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
+import { removeCanonicalRef } from '@/lib/stickers/shared-cache'
 
 interface RouteParams {
   params: { courseId: string; fileId: string }
@@ -154,6 +155,14 @@ export async function DELETE(_request: NextRequest, { params }: RouteParams) {
 
     // Delete from storage
     await deleteFile(supabase, file.storage_key)
+
+    // Remove canonical document reference (triggers reference_count decrement)
+    try {
+      await removeCanonicalRef(params.fileId)
+    } catch (refError) {
+      console.error('Error removing canonical ref:', refError)
+      // Non-fatal: continue with file deletion
+    }
 
     // Delete from database (cascades to stickers, qa_interactions, summaries)
     const { error } = await supabase
