@@ -19,7 +19,8 @@
       "Bash(openspec archive add-term-dropdown:*)",
       "Skill(openspec:proposal)",
       "Skill(openspec:proposal:*)",
-      "Bash(gh pr list:*)"
+      "Bash(gh pr list:*)",
+      "Bash(git status:*)"
     ],
     "additionalDirectories": [
       "e:\\cursor_project\\Student Aid-0.2\\openspec\\changes\\add-term-dropdown\\specs"
