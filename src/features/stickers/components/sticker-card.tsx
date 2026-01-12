@@ -11,6 +11,10 @@ interface StickerCardProps {
   onFollowUp?: (selectedText: string) => void
   isDeleting?: boolean
   depth?: number
+  /** Callback when mouse enters the card (for region highlighting) */
+  onMouseEnter?: () => void
+  /** Callback when mouse leaves the card */
+  onMouseLeave?: () => void
 }
 
 function StickerCardComponent({
@@ -20,6 +24,8 @@ function StickerCardComponent({
   onFollowUp,
   isDeleting = false,
   depth = 0,
+  onMouseEnter,
+  onMouseLeave,
 }: StickerCardProps) {
   const [isExpanded, setIsExpanded] = useState(!sticker.folded)
 
@@ -49,6 +55,8 @@ function StickerCardComponent({
       style={{
         borderLeftColor: depth > 0 ? (isAutoSticker ? '#93c5fd' : '#c4b5fd') : undefined,
       }}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
     >
       {/* Header */}
       <div

@@ -12,8 +12,12 @@ import { calculateExpirationSeconds } from '@/lib/pdf/page-metadata'
  * - Prompt template changes
  * - Output structure changes
  * - Key strategy changes (chunking, merging, image analysis)
+ * 
+ * History:
+ * - 2026-01-12.2: Added with_selected_images mode for user-directed image region selection
+ * - 2026-01-11.1: Initial cross-user deduplication with shared cache
  */
-export const PROMPT_VERSION = '2026-01-11.1'
+export const PROMPT_VERSION = '2026-01-12.2'
 
 /**
  * Supported locales for sticker generation
@@ -22,8 +26,11 @@ export type StickerLocale = 'en' | 'zh-Hans'
 
 /**
  * Effective mode for sticker generation
+ * - text_only: Page has no images or images are not relevant
+ * - with_images: Page has images, AI analyzes all images on page
+ * - with_selected_images: User-directed mode, AI analyzes user-selected image regions
  */
-export type EffectiveMode = 'text_only' | 'with_images'
+export type EffectiveMode = 'text_only' | 'with_images' | 'with_selected_images'
 
 /**
  * Sticker generation status
@@ -86,20 +93,22 @@ export async function checkUserSharePreference(userId: string): Promise<boolean>
  * @param pdfHash - SHA-256 hash of PDF binary content
  * @param page - 1-indexed page number
  * @param locale - Locale for sticker generation
- * @param effectiveMode - 'text_only' | 'with_images'
+ * @param effectiveMode - 'text_only' | 'with_images' | 'with_selected_images'
+ * @param selectionHash - Optional selection hash for with_selected_images mode
  * @returns CacheLookupResult with status and data
  */
 export async function checkSharedCache(
   pdfHash: string,
   page: number,
   locale: StickerLocale,
-  effectiveMode: EffectiveMode
+  effectiveMode: EffectiveMode,
+  selectionHash?: string | null
 ): Promise<CacheLookupResult> {
   // Use admin client to bypass RLS
   const supabase = createAdminClient()
 
-  // Query for existing cache entry with current prompt version
-  const { data } = await supabase
+  // Build query
+  let query = supabase
     .from('shared_auto_stickers')
     .select('id, status, stickers, image_summaries')
     .eq('pdf_hash', pdfHash)
@@ -108,7 +117,17 @@ export async function checkSharedCache(
     .eq('locale', locale)
     .eq('effective_mode', effectiveMode)
     .in('status', ['generating', 'ready'])
-    .single()
+
+  // Handle selection_hash based on mode
+  if (effectiveMode === 'with_selected_images' && selectionHash) {
+    // For selection mode, must match selection_hash
+    query = query.eq('selection_hash', selectionHash)
+  } else {
+    // For non-selection modes, selection_hash must be NULL
+    query = query.is('selection_hash', null)
+  }
+
+  const { data } = await query.single()
 
   if (!data) {
     return { status: 'not_found' }
@@ -153,6 +172,7 @@ export async function tryStartGeneration(params: {
   quotaUnits: number
   imagesCount?: number
   estimatedChunks?: number
+  selectionHash?: string | null
 }): Promise<StartGenerationResult> {
   const {
     pdfHash,
@@ -163,6 +183,7 @@ export async function tryStartGeneration(params: {
     quotaUnits,
     imagesCount = 0,
     estimatedChunks = 1,
+    selectionHash = null,
   } = params
 
   // Use admin client to bypass RLS
@@ -189,6 +210,7 @@ export async function tryStartGeneration(params: {
       expires_at: expiresAt,
       run_after: new Date().toISOString(),
       attempts: 0,
+      selection_hash: selectionHash,
     })
 
     if (insertError) {
@@ -196,7 +218,7 @@ export async function tryStartGeneration(params: {
       if (insertError.code === '23505') {
         // Another request already started generation
         // Get the existing generation ID
-        const existing = await checkSharedCache(pdfHash, page, locale, effectiveMode)
+        const existing = await checkSharedCache(pdfHash, page, locale, effectiveMode, selectionHash)
         return {
           started: false,
           generationId: existing.generationId || generationId,

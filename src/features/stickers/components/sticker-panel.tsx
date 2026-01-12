@@ -16,6 +16,8 @@ interface StickerPanelProps {
   pdfType: PdfType
   isScanned: boolean
   totalPages: number
+  /** Callback when hovering a sticker (for highlighting regions in PDF) */
+  onStickerHover?: (stickerId: string | null, regionIds: string[]) => void
 }
 
 export function StickerPanel({
@@ -25,6 +27,7 @@ export function StickerPanel({
   pdfType,
   isScanned,
   totalPages,
+  onStickerHover,
 }: StickerPanelProps) {
   const [streamingSelection, setStreamingSelection] = useState<string | null>(null)
 
@@ -115,6 +118,26 @@ export function StickerPanel({
     },
     [explainSelection, courseId, fileId, currentPage, pdfType, resetSelection]
   )
+
+  // Handle sticker hover for region highlighting
+  const handleStickerMouseEnter = useCallback(
+    (sticker: Sticker) => {
+      if (!onStickerHover) return
+      
+      // Extract region IDs from anchor.anchors (if present)
+      const anchor = sticker.anchor as { anchors?: Array<{ kind: string; id?: string }> }
+      const regionIds = (anchor?.anchors || [])
+        .filter(a => a.kind === 'image' && a.id)
+        .map(a => a.id as string)
+      
+      onStickerHover(sticker.id, regionIds)
+    },
+    [onStickerHover]
+  )
+
+  const handleStickerMouseLeave = useCallback(() => {
+    onStickerHover?.(null, [])
+  }, [onStickerHover])
 
   // Handle selection explain from PDF (called from parent)
   const handleSelectionExplain = useCallback(
@@ -220,6 +243,8 @@ export function StickerPanel({
                 onDelete={() => handleDelete(sticker.id)}
                 onFollowUp={(text) => handleFollowUp(sticker.id, text)}
                 isDeleting={deleteSticker.isPending}
+                onMouseEnter={() => handleStickerMouseEnter(sticker)}
+                onMouseLeave={handleStickerMouseLeave}
               />
             ))}
           </div>

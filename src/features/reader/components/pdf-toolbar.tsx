@@ -17,6 +17,14 @@ interface PdfToolbarProps {
   canGoPrevious: boolean
   canGoNext: boolean
   isSaving?: boolean
+  /** Whether image selection mode is active */
+  selectionMode?: boolean
+  /** Callback to toggle selection mode */
+  onSelectionModeChange?: (enabled: boolean) => void
+  /** Whether selection mode is available (e.g., disabled for scanned PDFs) */
+  selectionModeAvailable?: boolean
+  /** Whether generation is in progress */
+  isGenerating?: boolean
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -34,6 +42,10 @@ export function PdfToolbar({
   canGoPrevious,
   canGoNext,
   isSaving,
+  selectionMode = false,
+  onSelectionModeChange,
+  selectionModeAvailable = true,
+  isGenerating = false,
 }: PdfToolbarProps) {
   const [pageInput, setPageInput] = useState(currentPage.toString())
 
@@ -202,10 +214,52 @@ export function PdfToolbar({
         </button>
       </div>
 
-      {/* Save Status */}
-      <div className="flex items-center gap-2 text-sm text-gray-500">
-        {isSaving && (
-          <span className="flex items-center gap-1">
+      {/* Selection Mode Toggle & Status */}
+      <div className="flex items-center gap-3">
+        {/* Image Selection Toggle */}
+        {onSelectionModeChange && (
+          <button
+            onClick={() => onSelectionModeChange(!selectionMode)}
+            disabled={!selectionModeAvailable || isGenerating}
+            className={`flex items-center gap-1.5 rounded px-2.5 py-1.5 text-sm font-medium transition-colors ${
+              selectionMode
+                ? 'bg-blue-600 text-white hover:bg-blue-700'
+                : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+            } disabled:cursor-not-allowed disabled:opacity-50`}
+            title={
+              !selectionModeAvailable
+                ? 'Not available for scanned PDFs'
+                : selectionMode
+                ? 'Exit selection mode'
+                : 'Select image regions to explain'
+            }
+          >
+            {/* Bounding box icon */}
+            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
+              />
+            </svg>
+            <span className="hidden sm:inline">
+              {selectionMode ? 'Exit Selection' : 'Select Images'}
+            </span>
+          </button>
+        )}
+
+        {/* Generation in progress indicator */}
+        {isGenerating && (
+          <span className="flex items-center gap-1.5 text-sm text-blue-600">
+            <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
+            <span className="hidden sm:inline">Generating...</span>
+          </span>
+        )}
+
+        {/* Save Status */}
+        {isSaving && !isGenerating && (
+          <span className="flex items-center gap-1 text-sm text-gray-500">
             <div className="h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" />
             Saving...
           </span>
