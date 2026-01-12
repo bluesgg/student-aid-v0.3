@@ -371,18 +371,23 @@ def hello():
   "courseId": "course_1",
   "fileId": "file_1",
   "page": 5,
-  "pdfType": "Lecture"
+  "pdfType": "Lecture",
+  "locale": "en"
 }
 ```
 
+**新增参数**：
+* `locale`: 语言设置，可选值 `"en"` | `"zh-Hans"`，默认 `"en"`
+
 **限流规则**：300次/账户/月,按注册日期周期重置(例如9月7号注册,则每月7号00:00 UTC重置;需Cron Job实现,见04_TECH §13.1)
 
-**缓存检查**：
-1. 查询数据库是否已有(userId,fileId,page)的自动贴纸
-2. 有则直接返回,不重新生成,不扣配额和限流计数
-3. 无则调用AI生成并存储
+**缓存检查（v2.0 跨用户共享缓存）**：
+1. 检查用户私有缓存：(userId,fileId,page)的自动贴纸
+2. 检查共享缓存：(pdfHash,page,promptVersion,locale,effectiveMode)
+3. 有则直接返回200,不重新生成,不扣配额
+4. 无则启动异步生成,返回202
 
-**响应**：
+**响应（缓存命中 - HTTP 200）**：
 ```json
 {
   "ok": true,
@@ -402,15 +407,72 @@ def hello():
       }
     ],
     "quota": {
-      "autoExplain": { "used": 146, "limit": 300, "resetAt": "2025-02-07T00:00:00Z" }  // 根据9/7注册日期
-    }
+      "autoExplain": { "used": 146, "limit": 300, "resetAt": "2025-02-07T00:00:00Z" }
+    },
+    "cached": true,
+    "source": "shared_cache"
   }
+}
+```
+
+**响应（异步生成中 - HTTP 202）**：
+```json
+{
+  "ok": true,
+  "status": "generating",
+  "generationId": "550e8400-e29b-41d4-a716-446655440000",
+  "message": "Sticker generation in progress. Poll /api/ai/explain-page/status/:generationId for updates.",
+  "pollInterval": 2000
 }
 ```
 
 **错误码**：
 * `QUOTA_EXCEEDED` (429) - 月度配额已用尽
 * `FILE_IS_SCANNED` (400) - 扫描件不支持AI讲解
+
+### 3.3.1 GET /api/ai/explain-page/status/:generationId
+
+**轮询端点**：客户端收到202响应后,每2秒调用此端点检查生成状态
+
+**响应（生成中）**：
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "generating",
+    "generationId": "550e8400-e29b-41d4-a716-446655440000",
+    "message": "Sticker generation in progress",
+    "pollInterval": 2000
+  }
+}
+```
+
+**响应（完成）**：
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "ready",
+    "generationId": "550e8400-e29b-41d4-a716-446655440000",
+    "stickers": [...],
+    "generationTimeMs": 3500,
+    "message": "Stickers are ready"
+  }
+}
+```
+
+**响应（失败）**：
+```json
+{
+  "ok": true,
+  "data": {
+    "status": "failed",
+    "generationId": "550e8400-e29b-41d4-a716-446655440000",
+    "error": "AI generation failed",
+    "message": "Sticker generation failed. Quota has been refunded."
+  }
+}
+```
 
 ### 3.4 POST /api/ai/explain-selection
 
@@ -590,7 +652,102 @@ def hello():
 
 ---
 
-## 6. 统一错误码清单
+## 6. 内部/管理员接口
+
+### 6.1 POST /api/internal/worker/run
+
+**用途**：触发后台 Worker 处理待生成的 Sticker 任务
+
+**认证**：需要 `WORKER_SECRET` 或 `CRON_SECRET` 环境变量
+
+**请求头**：
+```
+Authorization: Bearer <WORKER_SECRET>
+```
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "workerId": "worker-1736598000000-abc123",
+    "jobsProcessed": 5,
+    "jobsFailed": 0,
+    "zombiesCleaned": 0,
+    "durationMs": 12500
+  }
+}
+```
+
+### 6.2 GET /api/admin/metrics
+
+**用途**：获取 Sticker 生成系统的监控指标
+
+**认证**：需要 `x-admin-secret` 请求头
+
+**查询参数**：
+* `period`: `"hour"` | `"day"` | `"week"`（默认 `"day"`）
+* `include`: 逗号分隔的区段列表，可选值：`"metrics"`, `"health"`, `"cache"`, `"all"`（默认 `"all"`）
+
+**请求示例**：
+```bash
+curl https://your-app.com/api/admin/metrics \
+  -H "x-admin-secret: $ADMIN_SECRET" \
+  -G -d "period=day" -d "include=all"
+```
+
+**响应**：
+```json
+{
+  "ok": true,
+  "data": {
+    "metrics": {
+      "period": "day",
+      "startTime": "2026-01-10T00:00:00Z",
+      "endTime": "2026-01-11T00:00:00Z",
+      "cacheHits": 150,
+      "cacheMisses": 50,
+      "cacheHitRate": 0.75,
+      "totalGenerations": 50,
+      "successfulGenerations": 49,
+      "failedGenerations": 1,
+      "successRate": 0.98,
+      "avgLatencyMs": 2500,
+      "p50LatencyMs": 2000,
+      "p95LatencyMs": 5000,
+      "p99LatencyMs": 8000,
+      "totalJobsProcessed": 50,
+      "avgRetries": 0.1,
+      "uniquePdfHashes": 30,
+      "sharedCacheEntries": 120
+    },
+    "workerHealth": {
+      "isHealthy": true,
+      "lastRunAt": "2026-01-11T10:00:00Z",
+      "pendingJobs": 3,
+      "stuckJobs": 0,
+      "avgJobDuration": 3500
+    },
+    "cacheEfficiency": {
+      "totalCanonicalDocs": 150,
+      "totalSharedStickers": 450,
+      "avgReferencesPerDoc": 2.5,
+      "estimatedCostSavings": 3.75,
+      "topSharedDocs": [
+        {
+          "pdfHash": "abc123...",
+          "referenceCount": 10,
+          "totalStickers": 25
+        }
+      ]
+    }
+  }
+}
+```
+
+---
+
+## 7. 统一错误码清单
 
 | 错误码 | HTTP | 含义 | 前端行为 |
 |--------|------|------|---------|
