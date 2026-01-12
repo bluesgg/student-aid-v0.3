@@ -18,7 +18,7 @@ import { PdfPage } from './pdf-page'
 import { TextSelectionPopup } from './text-selection-popup'
 import { VirtualPdfList, VIRTUAL_SCROLL_THRESHOLD } from './virtual-pdf-list'
 import { PdfRegionOverlay, type Region } from './pdf-region-overlay'
-import { type NormalizedRect, generateRegionId } from '@/lib/stickers/selection-hash'
+import { type NormalizedRect, generateRegionId, checkRegionOverlap } from '@/lib/stickers/selection-hash'
 import { cropPageRegion } from '@/lib/pdf/crop-image'
 import {
   explainSelectedImages,
@@ -69,6 +69,8 @@ export function PdfViewer({
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit-width')
   const [containerWidth, setContainerWidth] = useState(600)
   const [pageHeights, setPageHeights] = useState<number[]>([])
+  // Actual rendered page dimensions (updates on scale change)
+  const [actualPageDimensions, setActualPageDimensions] = useState<{ width: number; height: number } | null>(null)
 
   // ==================== Selection Mode State ====================
   const [selectionMode, setSelectionMode] = useState(false)
@@ -76,7 +78,7 @@ export function PdfViewer({
   const [draftRegions, setDraftRegions] = useState<Region[]>([])
   const [isGenerating, setIsGenerating] = useState(false)
   const [requestVersion, setRequestVersion] = useState(0)
-  
+
   // Canvas and crop storage (refs to persist across renders)
   const canvasMapRef = useRef<Map<number, HTMLCanvasElement>>(new Map())
   const regionCropsRef = useRef<Map<string, Blob>>(new Map())
@@ -194,7 +196,7 @@ export function PdfViewer({
         const pollForCompletion = async (generationId: string) => {
           try {
             const status = await pollExplainStatus(generationId)
-            
+
             if (currentVersion !== latestRequestVersionRef.current) return
 
             if (status.status === 'ready' && status.stickers) {
@@ -214,7 +216,7 @@ export function PdfViewer({
             setIsGenerating(false)
           }
         }
-        
+
         pollForCompletion(response.generationId)
       } else if (response.stickers) {
         // Immediate response
@@ -249,6 +251,12 @@ export function PdfViewer({
       return
     }
 
+    // Check for overlap with existing regions
+    if (checkRegionOverlap(rect, page, draftRegions)) {
+      console.warn('Region overlaps with existing selection')
+      return
+    }
+
     // Get canvas for this page
     const canvas = canvasMapRef.current.get(page)
     if (!canvas) {
@@ -269,12 +277,12 @@ export function PdfViewer({
     } catch (error) {
       console.error('Failed to crop region:', error)
     }
-  }, [draftRegions.length, debouncedTriggerGeneration])
+  }, [draftRegions, debouncedTriggerGeneration])
 
   const handleDeleteRegion = useCallback((id: string) => {
     // Remove from state
     setDraftRegions(prev => prev.filter(r => r.id !== id))
-    
+
     // Remove cached crop
     regionCropsRef.current.delete(id)
 
@@ -340,6 +348,22 @@ export function PdfViewer({
       setScale(Math.max(0.5, Math.min(2, Math.min(fitWidthScale, fitHeightScale))))
     }
   }, [zoomMode, containerWidth])
+
+  // Update actual page dimensions when scale changes or page loads
+  useEffect(() => {
+    const updateDimensions = () => {
+      const pageElement = containerRef.current?.querySelector(`[data-page-number="${currentPage}"]`)
+      if (pageElement) {
+        const rect = pageElement.getBoundingClientRect()
+        setActualPageDimensions({ width: rect.width, height: rect.height })
+        pageDimensionsRef.current.set(currentPage, { width: rect.width, height: rect.height })
+      }
+    }
+
+    // Use requestAnimationFrame to ensure DOM has updated
+    const frameId = requestAnimationFrame(updateDimensions)
+    return () => cancelAnimationFrame(frameId)
+  }, [scale, currentPage])
 
   // Handle page width for react-pdf
   const pageWidth = zoomMode === 'custom' ? undefined : containerWidth / scale
@@ -464,12 +488,12 @@ export function PdfViewer({
                     onCanvasUnmount={handleCanvasUnmount}
                   />
                   {/* Region Overlay */}
-                  {(selectionMode || draftRegions.length > 0 || highlightedRegionIds.length > 0) && (
+                  {(selectionMode || draftRegions.length > 0 || highlightedRegionIds.length > 0) && actualPageDimensions && (
                     <PdfRegionOverlay
                       regions={draftRegions}
                       currentPage={currentPage}
-                      pageWidth={pageWidth ? pageWidth * scale : containerWidth}
-                      pageHeight={pageWidth ? pageWidth * scale * 1.4 : containerWidth * 1.4}
+                      pageWidth={actualPageDimensions.width}
+                      pageHeight={actualPageDimensions.height}
                       highlightedRegionIds={highlightedRegionIds}
                       onDeleteRegion={handleDeleteRegion}
                       isSelectionMode={selectionMode}

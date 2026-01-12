@@ -69,7 +69,7 @@ export function PdfRegionOverlay({
 
   return (
     <div
-      className="pointer-events-none absolute inset-0"
+      className="pointer-events-none absolute inset-0 overflow-visible"
       style={{ width: pageWidth, height: pageHeight }}
     >
       {/* Render existing regions */}
@@ -88,9 +88,8 @@ export function PdfRegionOverlay({
         return (
           <div
             key={region.id}
-            className={`pointer-events-auto absolute border-2 transition-all duration-150 ${colors.border} ${colors.bg} ${
-              isHighlighted ? 'border-[3px]' : ''
-            }`}
+            className={`pointer-events-auto absolute border-2 transition-all duration-150 ${colors.border} ${colors.bg} ${isHighlighted ? 'border-[3px]' : ''
+              }`}
             style={style}
             data-region-id={region.id}
           >
@@ -99,16 +98,18 @@ export function PdfRegionOverlay({
               <button
                 onClick={(e) => {
                   e.stopPropagation()
+                  e.preventDefault()
                   onDeleteRegion(region.id)
                 }}
-                className="absolute -right-2 -top-2 flex h-5 w-5 items-center justify-center rounded-full bg-red-500 text-white shadow-md transition-transform hover:scale-110 hover:bg-red-600"
+                className="absolute flex h-6 w-6 items-center justify-center rounded-full bg-red-500 text-white shadow-lg transition-transform hover:scale-110 hover:bg-red-600 z-50"
+                style={{ right: '-12px', top: '-12px' }}
                 title="Delete region"
               >
-                <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path
                     strokeLinecap="round"
                     strokeLinejoin="round"
-                    strokeWidth={2}
+                    strokeWidth={2.5}
                     d="M6 18L18 6M6 6l12 12"
                   />
                 </svg>
@@ -190,11 +191,10 @@ export function RegionListSummary({
             {pageRegions.map((region, index) => (
               <div
                 key={region.id}
-                className={`flex items-center justify-between rounded px-2 py-1 text-xs transition-colors ${
-                  highlightedRegionIds.includes(region.id)
+                className={`flex items-center justify-between rounded px-2 py-1 text-xs transition-colors ${highlightedRegionIds.includes(region.id)
                     ? 'bg-blue-100 text-blue-800'
                     : 'bg-gray-50 text-gray-700 hover:bg-gray-100'
-                }`}
+                  }`}
                 onMouseEnter={() => onHoverRegion(region.id)}
                 onMouseLeave={() => onHoverRegion(null)}
               >

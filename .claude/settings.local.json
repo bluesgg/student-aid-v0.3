@@ -22,7 +22,9 @@
       "Bash(gh pr list:*)",
       "Bash(git status:*)",
       "Bash(npx openspec:*)",
-      "Bash(pnpm add:*)"
+      "Bash(pnpm add:*)",
+      "Bash(git push:*)",
+      "Bash(test:*)"
     ],
     "additionalDirectories": [
       "e:\\cursor_project\\Student Aid-0.2\\openspec\\changes\\add-term-dropdown\\specs"

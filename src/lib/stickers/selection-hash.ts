@@ -4,7 +4,7 @@
  */
 
 import { createHash } from 'crypto'
-import { PROMPT_VERSION, type StickerLocale, type EffectiveMode } from './shared-cache'
+import { PROMPT_VERSION, type StickerLocale, type EffectiveMode } from './types'
 
 /**
  * Normalized rectangle coordinates (0..1 range relative to page dimensions)
@@ -242,4 +242,44 @@ export function clampRect(rect: NormalizedRect): NormalizedRect {
   const width = Math.max(0, Math.min(1 - x, rect.width))
   const height = Math.max(0, Math.min(1 - y, rect.height))
   return { x, y, width, height }
+}
+
+/**
+ * Check if two rectangles overlap.
+ * Uses strict inequality to allow touching edges without overlap.
+ * 
+ * @param a - First rectangle
+ * @param b - Second rectangle
+ * @returns true if rectangles overlap, false otherwise
+ */
+export function rectsOverlap(a: NormalizedRect, b: NormalizedRect): boolean {
+  // Check if one rect is completely to the left/right/above/below the other
+  const aRight = a.x + a.width
+  const aBottom = a.y + a.height
+  const bRight = b.x + b.width
+  const bBottom = b.y + b.height
+
+  // No overlap if one is completely outside the other
+  if (aRight <= b.x || bRight <= a.x) return false
+  if (aBottom <= b.y || bBottom <= a.y) return false
+
+  return true
+}
+
+/**
+ * Check if a new region would overlap with any existing regions on the same page.
+ * 
+ * @param newRect - The new rectangle to check
+ * @param newPage - Page number of the new rectangle
+ * @param existingRegions - Array of existing regions with page and rect
+ * @returns true if there's an overlap, false otherwise
+ */
+export function checkRegionOverlap(
+  newRect: NormalizedRect,
+  newPage: number,
+  existingRegions: Array<{ page: number; rect: NormalizedRect }>
+): boolean {
+  return existingRegions.some(
+    (region) => region.page === newPage && rectsOverlap(newRect, region.rect)
+  )
 }

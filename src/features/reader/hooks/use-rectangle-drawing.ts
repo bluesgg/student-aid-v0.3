@@ -133,10 +133,15 @@ export function useRectangleDrawing(
       // Prevent text selection while drawing
       e.preventDefault()
 
-      // Get position relative to the target element
-      const rect = e.currentTarget.getBoundingClientRect()
+      // Find the actual page element with data-page-number attribute
+      // This ensures consistent coordinate system across all events
+      const pageElement = (e.currentTarget as HTMLElement).querySelector(`[data-page-number="${page}"]`) || e.currentTarget
+      const rect = pageElement.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
+
+      // Update page dimensions for accurate normalization
+      pageDimensionsRef.current.set(page, { width: rect.width, height: rect.height })
 
       setDrawing({
         isDrawing: true,
@@ -145,8 +150,8 @@ export function useRectangleDrawing(
         page,
       })
 
-      // Capture pointer to receive events even if mouse leaves element
-      ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
+        // Capture pointer to receive events even if mouse leaves element
+        ; (e.target as HTMLElement).setPointerCapture?.(e.pointerId)
     },
     [enabled]
   )
@@ -181,7 +186,7 @@ export function useRectangleDrawing(
       }
 
       // Release pointer capture
-      ;(e.target as HTMLElement).releasePointerCapture?.(e.pointerId)
+      ; (e.target as HTMLElement).releasePointerCapture?.(e.pointerId)
 
       // Get final position
       const pageElement = document.querySelector(`[data-page-number="${drawing.page}"]`)

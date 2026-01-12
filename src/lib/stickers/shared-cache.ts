@@ -6,65 +6,27 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { calculateExpirationSeconds } from '@/lib/pdf/page-metadata'
 
-/**
- * Current prompt version for cache invalidation.
- * Bump this when:
- * - Prompt template changes
- * - Output structure changes
- * - Key strategy changes (chunking, merging, image analysis)
- * 
- * History:
- * - 2026-01-12.2: Added with_selected_images mode for user-directed image region selection
- * - 2026-01-11.1: Initial cross-user deduplication with shared cache
- */
-export const PROMPT_VERSION = '2026-01-12.2'
+// Re-export types and constants from types.ts for backward compatibility
+export {
+  PROMPT_VERSION,
+  type StickerLocale,
+  type EffectiveMode,
+  type StickerStatus,
+  type CacheLookupResult,
+  type StartGenerationResult,
+  type GenerationStatusResult,
+} from './types'
 
-/**
- * Supported locales for sticker generation
- */
-export type StickerLocale = 'en' | 'zh-Hans'
-
-/**
- * Effective mode for sticker generation
- * - text_only: Page has no images or images are not relevant
- * - with_images: Page has images, AI analyzes all images on page
- * - with_selected_images: User-directed mode, AI analyzes user-selected image regions
- */
-export type EffectiveMode = 'text_only' | 'with_images' | 'with_selected_images'
-
-/**
- * Sticker generation status
- */
-export type StickerStatus = 'generating' | 'ready' | 'failed'
-
-/**
- * Cache lookup result
- */
-export interface CacheLookupResult {
-  status: 'ready' | 'generating' | 'not_found'
-  stickers?: unknown[] // JSONB stickers array
-  generationId?: string
-  imageSummaries?: unknown // JSONB image summaries
-}
-
-/**
- * Generation start result
- */
-export interface StartGenerationResult {
-  started: boolean
-  generationId: string
-  alreadyExists?: boolean
-}
-
-/**
- * Generation status result
- */
-export interface GenerationStatusResult {
-  status: StickerStatus
-  stickers?: unknown[]
-  error?: string
-  generationTimeMs?: number
-}
+// Import types for local use
+import {
+  PROMPT_VERSION,
+  type StickerLocale,
+  type EffectiveMode,
+  type StickerStatus,
+  type CacheLookupResult,
+  type StartGenerationResult,
+  type GenerationStatusResult,
+} from './types'
 
 /**
  * Check if user has opted out of shared cache.

@@ -163,9 +163,9 @@ The system SHALL reject selected-images requests for scanned PDFs.
 
 ---
 
-## MODIFIED Requirements
+## ADDED Requirements (continued)
 
-### Requirement: Multimodal Prompt Construction (Extended)
+### Requirement: Multimodal Prompt Construction for Selected Regions
 The system SHALL construct multimodal prompts for selected image regions.
 
 #### Scenario: Prompt with selected regions and reference context
