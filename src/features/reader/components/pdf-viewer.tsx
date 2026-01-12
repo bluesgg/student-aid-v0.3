@@ -94,8 +94,23 @@ export function PdfViewer({
     }
 
     updateWidth()
+
+    // Use ResizeObserver to detect container size changes (e.g., when panels are resized)
+    const resizeObserver = new ResizeObserver(() => {
+      updateWidth()
+    })
+
+    if (containerRef.current) {
+      resizeObserver.observe(containerRef.current)
+    }
+
+    // Fallback to window resize for browser zoom changes
     window.addEventListener('resize', updateWidth)
-    return () => window.removeEventListener('resize', updateWidth)
+
+    return () => {
+      resizeObserver.disconnect()
+      window.removeEventListener('resize', updateWidth)
+    }
   }, [])
 
   // Calculate scale based on zoom mode

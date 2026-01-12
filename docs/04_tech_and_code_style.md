@@ -345,7 +345,7 @@ export const QUOTA_CONFIG = {
 # === Supabase ===
 NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbG...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbG...  # 仅服务端
+SUPABASE_SERVICE_ROLE_KEY=eyJhbG...  # 仅服务端（v2.0 跨用户缓存必需，用于绕过RLS）
 
 # === OpenAI ===
 OPENAI_API_KEY=sk-...
@@ -362,6 +362,10 @@ AUTO_EXPLAIN_MONTHLY=300
 # === 功能开关 ===
 ENABLE_AUTO_EXPLAIN=true
 ENABLE_STREAMING=true
+
+# === Worker & Admin (v2.0) ===
+WORKER_SECRET=your-secure-random-string  # Worker触发密钥（用于Cron）
+ADMIN_SECRET=your-admin-secret           # 管理员API密钥
 
 # === 构建版本 ===
 NEXT_PUBLIC_BUILD_VERSION=v1.0.0
@@ -501,22 +505,27 @@ ALTER TABLE files ADD COLUMN has_used_manual_explain BOOLEAN DEFAULT FALSE;
 ALTER TABLE files ADD COLUMN has_generated_summary BOOLEAN DEFAULT FALSE;
 ```
 
-**PDF内容Hash**（成本优化）：
+**PDF内容Hash**（v2.0 跨用户去重）：
 ```sql
 ALTER TABLE files ADD COLUMN pdf_content_hash VARCHAR(64);  -- SHA-256
 ```
 
-**Hash计算**：
+**Hash计算（基于二进制内容）**：
 ```typescript
 // lib/pdf-hash.ts
 import crypto from 'crypto'
-import pdf from 'pdf-parse'
 
 export async function calculatePdfHash(buffer: Buffer): Promise<string> {
-  const data = await pdf(buffer)
-  return crypto.createHash('sha256').update(data.text).digest('hex')
+  // 基于PDF二进制内容计算hash（而非文本内容）
+  // 确保相同PDF文件（包括图片、格式等）产生相同hash
+  return crypto.createHash('sha256').update(buffer).digest('hex')
 }
 ```
+
+**注意**：
+- Changelog 明确要求基于"PDF二进制"而非文本内容
+- 二进制hash确保包含图片的PDF也能正确去重
+- 缺点：相同内容但metadata不同（如修改日期）会产生不同hash
 
 **设备与客户端状态**（安全、兼容性、排错）：
 
@@ -756,6 +765,45 @@ export async function getUserQuotaLimit(userId: string, bucket: string): Promise
 ```
 
 **定时任务调度**（配额重置、数据清理）：
+
+#### Worker 触发 Cron（v2.0 异步生成必需）
+
+**用途**：定期触发后台 Worker 处理待生成的 Sticker 任务
+
+**Cron 配置**：
+```bash
+# URL: POST /api/internal/worker/run
+# 频率: */1 * * * * (每1分钟) 或 */2 * * * * (每2分钟)
+# Header: Authorization: Bearer $WORKER_SECRET
+```
+
+**支持的平台**:
+- Vercel Cron
+- Railway Cron
+- GitHub Actions (scheduled workflow)
+- 第三方 Cron 服务（cron-job.org、EasyCron）
+
+**Vercel 配置示例** (`vercel.json`):
+```json
+{
+  "crons": [{
+    "path": "/api/internal/worker/run",
+    "schedule": "*/1 * * * *"
+  }]
+}
+```
+
+**监控与告警**：
+- 记录每次 Worker 执行时间到 `sticker_metrics` 表
+- 如果 5 分钟内无执行记录 → 发送告警（邮件/Slack）
+- 监控指标：待处理任务数、僵尸任务数、平均处理时长
+
+**注意事项**：
+- Worker 是异步生成功能的关键依赖，Cron 中断将导致所有生成任务停滞
+- 建议配置监控告警，及时发现 Cron 失效问题
+- 测试环境可手动调用 `/api/internal/worker/run`，无需 Cron
+
+#### 配额重置 Cron
 
 配额按注册日期周期重置需要每天运行Cron Job：
 

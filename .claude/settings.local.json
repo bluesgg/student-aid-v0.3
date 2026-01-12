@@ -20,7 +20,9 @@
       "Skill(openspec:proposal)",
       "Skill(openspec:proposal:*)",
       "Bash(gh pr list:*)",
-      "Bash(git status:*)"
+      "Bash(git status:*)",
+      "Bash(npx openspec:*)",
+      "Bash(pnpm add:*)"
     ],
     "additionalDirectories": [
       "e:\\cursor_project\\Student Aid-0.2\\openspec\\changes\\add-term-dropdown\\specs"
