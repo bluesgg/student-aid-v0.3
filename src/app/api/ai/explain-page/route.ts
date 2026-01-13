@@ -20,6 +20,11 @@ import {
 } from '@/lib/stickers/shared-cache'
 import { determineEffectiveMode } from '@/lib/pdf/page-metadata'
 import { computeSelectionHash, isValidNormalizedRect, type SelectedImageRegion, type NormalizedRect } from '@/lib/stickers/selection-hash'
+import {
+  retrieveContextForPage,
+  buildContextHint,
+  getContextSummary,
+} from '@/lib/context'
 import { z } from 'zod'
 
 // Required for multipart form data parsing with File handling
@@ -469,6 +474,25 @@ async function syncGenerateStickers(
     )
   }
 
+  // Retrieve context from shared context library (graceful degradation on failure)
+  let contextHint = ''
+  try {
+    const contextResult = await retrieveContextForPage({
+      userId: user.id,
+      courseId,
+      fileId,
+      currentPage: page,
+      pageText,
+    })
+    if (contextResult.entries.length > 0) {
+      console.log('Context retrieved for explain-page:', getContextSummary(contextResult))
+      contextHint = buildContextHint(contextResult.entries)
+    }
+  } catch (contextError) {
+    // Silent degradation - continue without context
+    console.error('Context retrieval failed, proceeding without context:', contextError)
+  }
+
   // Build prompt
   const prompt = buildExplainPagePrompt({
     pageText,
@@ -477,6 +501,13 @@ async function syncGenerateStickers(
     totalPages: file.page_count,
   })
 
+  // Build system message with optional context hint
+  const baseSystemMessage =
+    'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations.'
+  const systemMessage = contextHint
+    ? `${baseSystemMessage}\n${contextHint}`
+    : baseSystemMessage
+
   // Call OpenAI
   const openai = getOpenAIClient()
   const completion = await openai.chat.completions.create({
@@ -484,8 +515,7 @@ async function syncGenerateStickers(
     messages: [
       {
         role: 'system',
-        content:
-          'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations.',
+        content: systemMessage,
       },
       { role: 'user', content: prompt },
     ],

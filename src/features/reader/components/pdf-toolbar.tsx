@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { type ReaderMode } from '@/lib/reader/types'
 
 export type ZoomMode = 'custom' | 'fit-width' | 'fit-page'
 
@@ -25,6 +26,10 @@ interface PdfToolbarProps {
   selectionModeAvailable?: boolean
   /** Whether generation is in progress */
   isGenerating?: boolean
+  /** Current reader mode (page or scroll) */
+  readerMode?: ReaderMode
+  /** Callback to change reader mode */
+  onReaderModeChange?: (mode: ReaderMode) => void
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -46,6 +51,8 @@ export function PdfToolbar({
   onSelectionModeChange,
   selectionModeAvailable = true,
   isGenerating = false,
+  readerMode = 'page',
+  onReaderModeChange,
 }: PdfToolbarProps) {
   const [pageInput, setPageInput] = useState(currentPage.toString())
 
@@ -212,6 +219,76 @@ export function PdfToolbar({
             />
           </svg>
         </button>
+
+        {/* Reader Mode Toggle */}
+        {onReaderModeChange && (
+          <div className="ml-2 border-l border-gray-200 pl-2">
+            <div
+              role="radiogroup"
+              aria-label="Reading mode"
+              className="flex rounded-md border border-gray-300 bg-gray-50"
+            >
+              <button
+                role="radio"
+                aria-checked={readerMode === 'page'}
+                tabIndex={readerMode === 'page' ? 0 : -1}
+                onClick={() => onReaderModeChange('page')}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    e.preventDefault()
+                    onReaderModeChange('scroll')
+                  }
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                  readerMode === 'page'
+                    ? 'bg-white text-gray-900 shadow-sm rounded-l-md'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Single page view"
+              >
+                {/* Page icon */}
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                  />
+                </svg>
+                <span className="hidden sm:inline">Page</span>
+              </button>
+              <button
+                role="radio"
+                aria-checked={readerMode === 'scroll'}
+                tabIndex={readerMode === 'scroll' ? 0 : -1}
+                onClick={() => onReaderModeChange('scroll')}
+                onKeyDown={(e) => {
+                  if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    e.preventDefault()
+                    onReaderModeChange('page')
+                  }
+                }}
+                className={`flex items-center gap-1 px-2.5 py-1 text-sm font-medium transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 ${
+                  readerMode === 'scroll'
+                    ? 'bg-white text-gray-900 shadow-sm rounded-r-md'
+                    : 'text-gray-600 hover:text-gray-900'
+                }`}
+                title="Continuous scroll view"
+              >
+                {/* Scroll icon */}
+                <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M4 6h16M4 10h16M4 14h16M4 18h16"
+                  />
+                </svg>
+                <span className="hidden sm:inline">Scroll</span>
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Selection Mode Toggle & Status */}

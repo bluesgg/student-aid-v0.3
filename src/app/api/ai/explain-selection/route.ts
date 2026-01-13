@@ -10,6 +10,12 @@ import {
   buildFollowUpPrompt,
 } from '@/lib/openai/prompts/explain-selection'
 import { createStreamingResponse, createSSEResponse } from '@/lib/openai/streaming'
+import {
+  retrieveContextForPage,
+  buildEnhancedSystemMessage,
+  getContextSummary,
+  type ContextRetrievalResult,
+} from '@/lib/context'
 import { z } from 'zod'
 
 const MAX_FOLLOW_UP_DEPTH = 10
@@ -125,6 +131,25 @@ export async function POST(request: NextRequest) {
       pageText = ''
     }
 
+    // Retrieve context from shared context library (graceful degradation on failure)
+    let contextResult: ContextRetrievalResult = { entries: [], totalTokens: 0, retrievalTimeMs: 0 }
+    try {
+      contextResult = await retrieveContextForPage({
+        userId: user.id,
+        courseId,
+        fileId,
+        currentPage: page,
+        pageText,
+        question: selectedText, // Use selected text as context for keyword extraction
+      })
+      if (contextResult.entries.length > 0) {
+        console.log('Context retrieved:', getContextSummary(contextResult))
+      }
+    } catch (contextError) {
+      // Silent degradation - continue without context
+      console.error('Context retrieval failed, proceeding without context:', contextError)
+    }
+
     // Build prompt
     const prompt = parentContent
       ? buildFollowUpPrompt({
@@ -143,6 +168,11 @@ export async function POST(request: NextRequest) {
           depth: 0,
         })
 
+    // Build system message with context enhancement
+    const baseSystemMessage =
+      'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).'
+    const systemMessage = buildEnhancedSystemMessage(baseSystemMessage, contextResult)
+
     // Call OpenAI with streaming
     const openai = getOpenAIClient()
     const stream = await openai.chat.completions.create({
@@ -150,8 +180,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'system',
-          content:
-            'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).',
+          content: systemMessage,
         },
         { role: 'user', content: prompt },
       ],

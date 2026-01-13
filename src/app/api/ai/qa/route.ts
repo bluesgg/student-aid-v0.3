@@ -7,6 +7,12 @@ import { deductQuota } from '@/lib/quota/deduct'
 import { extractPdfInfo } from '@/lib/pdf/extract'
 import { buildQAPrompt, extractPageReferences } from '@/lib/openai/prompts/qa'
 import { createStreamingResponse, createSSEResponse } from '@/lib/openai/streaming'
+import {
+  retrieveContextForPage,
+  buildEnhancedSystemMessage,
+  getContextSummary,
+  type ContextRetrievalResult,
+} from '@/lib/context'
 import { z } from 'zod'
 
 const requestSchema = z.object({
@@ -99,6 +105,25 @@ export async function POST(request: NextRequest) {
       documentText = documentText.slice(0, maxChars) + '\n\n[Document truncated due to length...]'
     }
 
+    // Retrieve context from shared context library (graceful degradation on failure)
+    let contextResult: ContextRetrievalResult = { entries: [], totalTokens: 0, retrievalTimeMs: 0 }
+    try {
+      contextResult = await retrieveContextForPage({
+        userId: user.id,
+        courseId,
+        fileId,
+        currentPage: 1, // Q&A is document-wide, use page 1 as reference
+        pageText: documentText.slice(0, 5000), // Sample of document for context
+        question, // User's question for keyword extraction
+      })
+      if (contextResult.entries.length > 0) {
+        console.log('Context retrieved for Q&A:', getContextSummary(contextResult))
+      }
+    } catch (contextError) {
+      // Silent degradation - continue without context
+      console.error('Context retrieval failed, proceeding without context:', contextError)
+    }
+
     // Build prompt
     const prompt = buildQAPrompt({
       question,
@@ -108,6 +133,11 @@ export async function POST(request: NextRequest) {
       totalPages: file.page_count,
     })
 
+    // Build system message with context enhancement
+    const baseSystemMessage =
+      'You are an expert educational AI tutor. You help students understand academic material by answering their questions thoroughly and accurately. Always reference page numbers when the information comes from specific pages. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).'
+    const systemMessage = buildEnhancedSystemMessage(baseSystemMessage, contextResult)
+
     // Call OpenAI with streaming
     const openai = getOpenAIClient()
     const stream = await openai.chat.completions.create({
@@ -115,8 +145,7 @@ export async function POST(request: NextRequest) {
       messages: [
         {
           role: 'system',
-          content:
-            'You are an expert educational AI tutor. You help students understand academic material by answering their questions thoroughly and accurately. Always reference page numbers when the information comes from specific pages. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).',
+          content: systemMessage,
         },
         { role: 'user', content: prompt },
       ],

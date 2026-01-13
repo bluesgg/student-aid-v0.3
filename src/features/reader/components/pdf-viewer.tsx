@@ -16,9 +16,9 @@ import { useRectangleDrawing } from '../hooks/use-rectangle-drawing'
 import { PdfToolbar, ZoomMode } from './pdf-toolbar'
 import { PdfPage } from './pdf-page'
 import { TextSelectionPopup } from './text-selection-popup'
-import { VirtualPdfList, VIRTUAL_SCROLL_THRESHOLD } from './virtual-pdf-list'
+import { VirtualPdfList, type VirtualPdfListHandle } from './virtual-pdf-list'
 import { PdfRegionOverlay, type Region } from './pdf-region-overlay'
-import { type NormalizedRect, generateRegionId, checkRegionOverlap } from '@/lib/stickers/selection-hash'
+import { type NormalizedRect, checkRegionOverlap } from '@/lib/stickers/selection-hash'
 import { cropPageRegion } from '@/lib/pdf/crop-image'
 import {
   explainSelectedImages,
@@ -26,6 +26,12 @@ import {
   type ExplainSelectedImagesPayload,
   MissingCropError,
 } from '@/features/stickers/api/explain-page-multipart'
+import {
+  type ReaderMode,
+  getInitialReaderMode,
+  setStoredReaderMode,
+  syncModeToURL,
+} from '@/lib/reader/types'
 
 interface PdfViewerProps {
   fileUrl: string
@@ -65,12 +71,17 @@ export function PdfViewer({
   highlightedRegionIds = [],
 }: PdfViewerProps) {
   const containerRef = useRef<HTMLDivElement>(null)
+  const virtualListRef = useRef<VirtualPdfListHandle>(null)
   const [scale, setScale] = useState(1)
   const [zoomMode, setZoomMode] = useState<ZoomMode>('fit-width')
   const [containerWidth, setContainerWidth] = useState(600)
+  const [containerHeight, setContainerHeight] = useState(600)
   const [pageHeights, setPageHeights] = useState<number[]>([])
   // Actual rendered page dimensions (updates on scale change)
   const [actualPageDimensions, setActualPageDimensions] = useState<{ width: number; height: number } | null>(null)
+
+  // ==================== Reader Mode State ====================
+  const [readerMode, setReaderMode] = useState<ReaderMode>(() => getInitialReaderMode())
 
   // ==================== Selection Mode State ====================
   const [selectionMode, setSelectionMode] = useState(false)
@@ -305,19 +316,27 @@ export function PdfViewer({
     onRectComplete: handleRegionComplete,
   })
 
-  // Calculate container width for fit modes
+  // ==================== Reader Mode Handler ====================
+  const handleReaderModeChange = useCallback((mode: ReaderMode) => {
+    setReaderMode(mode)
+    setStoredReaderMode(mode)
+    syncModeToURL(mode)
+  }, [])
+
+  // Calculate container dimensions for fit modes
   useEffect(() => {
-    const updateWidth = () => {
+    const updateDimensions = () => {
       if (containerRef.current) {
         setContainerWidth(containerRef.current.clientWidth - 48) // Subtract padding
+        setContainerHeight(containerRef.current.clientHeight)
       }
     }
 
-    updateWidth()
+    updateDimensions()
 
     // Use ResizeObserver to detect container size changes (e.g., when panels are resized)
     const resizeObserver = new ResizeObserver(() => {
-      updateWidth()
+      updateDimensions()
     })
 
     if (containerRef.current) {
@@ -325,11 +344,11 @@ export function PdfViewer({
     }
 
     // Fallback to window resize for browser zoom changes
-    window.addEventListener('resize', updateWidth)
+    window.addEventListener('resize', updateDimensions)
 
     return () => {
       resizeObserver.disconnect()
-      window.removeEventListener('resize', updateWidth)
+      window.removeEventListener('resize', updateDimensions)
     }
   }, [])
 
@@ -363,7 +382,7 @@ export function PdfViewer({
     // Use requestAnimationFrame to ensure DOM has updated
     const frameId = requestAnimationFrame(updateDimensions)
     return () => cancelAnimationFrame(frameId)
-  }, [scale, currentPage])
+  }, [scale, currentPage, pageDimensionsRef])
 
   // Handle page width for react-pdf
   const pageWidth = zoomMode === 'custom' ? undefined : containerWidth / scale
@@ -377,20 +396,46 @@ export function PdfViewer({
     [onSelectionExplain, clearSelection]
   )
 
-  // Store page heights for virtual scrolling
-  const handlePageLoadSuccess = useCallback(
-    (page: { pageNumber: number; height: number; width: number }) => {
+  // Store page heights for virtual scrolling (called when pages render)
+  const handlePageRender = useCallback(
+    (pageNumber: number, height: number) => {
       setPageHeights((prev) => {
+        // Only update if height is different to avoid unnecessary re-renders
+        if (prev[pageNumber - 1] === height) return prev
         const newHeights = [...prev]
-        newHeights[page.pageNumber - 1] = page.height
+        newHeights[pageNumber - 1] = height
         return newHeights
       })
     },
     []
   )
 
-  // Use virtual scrolling for large documents
-  const useVirtualScrolling = (numPages || totalPages) > VIRTUAL_SCROLL_THRESHOLD
+  // Wrap navigation functions for mode-aware behavior
+  const handleGoToPage = useCallback((page: number) => {
+    if (readerMode === 'scroll' && virtualListRef.current) {
+      virtualListRef.current.scrollToPage(page, 'smooth')
+    } else {
+      goToPage(page)
+    }
+  }, [readerMode, goToPage])
+
+  const handleNextPage = useCallback(() => {
+    if (readerMode === 'scroll' && virtualListRef.current) {
+      const nextPage = Math.min(currentPage + 1, numPages || totalPages)
+      virtualListRef.current.scrollToPage(nextPage, 'smooth')
+    } else {
+      goToNextPage()
+    }
+  }, [readerMode, currentPage, numPages, totalPages, goToNextPage])
+
+  const handlePreviousPage = useCallback(() => {
+    if (readerMode === 'scroll' && virtualListRef.current) {
+      const prevPage = Math.max(currentPage - 1, 1)
+      virtualListRef.current.scrollToPage(prevPage, 'smooth')
+    } else {
+      goToPreviousPage()
+    }
+  }, [readerMode, currentPage, goToPreviousPage])
 
   return (
     <div className="flex h-full flex-col">
@@ -400,11 +445,11 @@ export function PdfViewer({
         totalPages={numPages || totalPages}
         scale={scale}
         zoomMode={zoomMode}
-        onPageChange={goToPage}
+        onPageChange={handleGoToPage}
         onScaleChange={setScale}
         onZoomModeChange={setZoomMode}
-        onPreviousPage={goToPreviousPage}
-        onNextPage={goToNextPage}
+        onPreviousPage={handlePreviousPage}
+        onNextPage={handleNextPage}
         canGoPrevious={canGoPrevious}
         canGoNext={canGoNext}
         isSaving={isSaving}
@@ -412,12 +457,23 @@ export function PdfViewer({
         onSelectionModeChange={handleSelectionModeChange}
         selectionModeAvailable={!isScanned}
         isGenerating={isGenerating}
+        readerMode={readerMode}
+        onReaderModeChange={handleReaderModeChange}
       />
+
+      {/* ARIA Live Region for current page announcements */}
+      <div
+        aria-live="polite"
+        aria-atomic="true"
+        className="sr-only"
+      >
+        Page {currentPage} of {numPages || totalPages}
+      </div>
 
       {/* PDF Content */}
       <div
         ref={containerRef}
-        className="relative flex-1 overflow-auto bg-gray-100 p-6"
+        className={`relative flex-1 bg-gray-100 p-6 ${readerMode === 'scroll' ? 'overflow-hidden' : 'overflow-auto'}`}
       >
         {/* Loading State */}
         {isLoading && (
@@ -460,9 +516,10 @@ export function PdfViewer({
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             loading={null}
-            className="flex flex-col items-center"
+            className={readerMode === 'scroll' ? 'h-full w-full' : 'flex flex-col items-center'}
           >
-            {!isLoading && !useVirtualScrolling && (
+            {/* Page Mode: Single page view */}
+            {!isLoading && readerMode === 'page' && (
               <div
                 className={`relative flex justify-center ${selectionMode ? 'cursor-crosshair' : ''}`}
                 onPointerMove={handlePointerMove}
@@ -504,15 +561,33 @@ export function PdfViewer({
               </div>
             )}
 
-            {!isLoading && useVirtualScrolling && containerRef.current && (
-              <VirtualPdfList
-                numPages={numPages || totalPages}
-                scale={scale}
-                pageWidth={pageWidth || containerWidth}
-                pageHeights={pageHeights}
-                currentPage={currentPage}
-                onPageInViewChange={setPage}
-              />
+            {/* Scroll Mode: Continuous scroll with virtual list */}
+            {!isLoading && readerMode === 'scroll' && (
+              <div className="h-full w-full">
+                <VirtualPdfList
+                  ref={virtualListRef}
+                  numPages={numPages || totalPages}
+                  scale={scale}
+                  pageWidth={pageWidth || containerWidth}
+                  pageHeights={pageHeights}
+                  currentPage={currentPage}
+                  onPageInViewChange={setPage}
+                  onPageRender={handlePageRender}
+                  containerHeight={Math.max(400, containerHeight - 48)}
+                  onCanvasReady={handleCanvasReady}
+                  onCanvasUnmount={handleCanvasUnmount}
+                  selectionMode={selectionMode}
+                  regions={draftRegions}
+                  highlightedRegionIds={highlightedRegionIds}
+                  onDeleteRegion={handleDeleteRegion}
+                  onPointerDown={handlePointerDown}
+                  onPointerMove={handlePointerMove}
+                  onPointerUp={handlePointerUp}
+                  drawingRect={currentRect}
+                  drawingPage={drawing.page}
+                  pageDimensionsRef={pageDimensionsRef}
+                />
+              </div>
             )}
           </Document>
         )}

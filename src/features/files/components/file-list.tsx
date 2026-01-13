@@ -1,7 +1,10 @@
 'use client'
 
 import Link from 'next/link'
+import { useMemo } from 'react'
 import { useFiles, useDeleteFile } from '../hooks/use-files'
+import { useExtractionStatuses, type ExtractionStatusData } from '../hooks/use-extraction-status'
+import { ExtractionStatusBadge } from './extraction-status-badge'
 import type { CourseFile, FileType } from '../api'
 
 interface FileListProps {
@@ -13,9 +16,10 @@ interface FileGroupProps {
   files: CourseFile[]
   courseId: string
   onDelete: (file: CourseFile) => void
+  getStatus: (fileId: string) => ExtractionStatusData | undefined
 }
 
-function FileGroup({ title, files, courseId, onDelete }: FileGroupProps) {
+function FileGroup({ title, files, courseId, onDelete, getStatus }: FileGroupProps) {
   if (files.length === 0) return null
 
   return (
@@ -30,6 +34,7 @@ function FileGroup({ title, files, courseId, onDelete }: FileGroupProps) {
             file={file}
             courseId={courseId}
             onDelete={() => onDelete(file)}
+            extractionStatus={getStatus(file.id)}
           />
         ))}
       </div>
@@ -41,9 +46,10 @@ interface FileRowProps {
   file: CourseFile
   courseId: string
   onDelete: () => void
+  extractionStatus: ExtractionStatusData | undefined
 }
 
-function FileRow({ file, courseId, onDelete }: FileRowProps) {
+function FileRow({ file, courseId, onDelete, extractionStatus }: FileRowProps) {
   return (
     <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-secondary-200 hover:border-primary-300 transition-colors group">
       <Link
@@ -63,18 +69,21 @@ function FileRow({ file, courseId, onDelete }: FileRowProps) {
             />
           </svg>
         </div>
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <p className="text-sm font-medium text-secondary-900 truncate">
             {file.name}
           </p>
-          <p className="text-xs text-secondary-500">
-            {file.pageCount} {file.pageCount === 1 ? 'page' : 'pages'}
-            {file.isScanned && (
-              <span className="ml-2 text-amber-600" title="Scanned PDF - AI features may be limited">
-                Scanned
-              </span>
-            )}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap">
+            <p className="text-xs text-secondary-500">
+              {file.pageCount} {file.pageCount === 1 ? 'page' : 'pages'}
+              {file.isScanned && (
+                <span className="ml-2 text-amber-600" title="Scanned PDF - AI features may be limited">
+                  Scanned
+                </span>
+              )}
+            </p>
+            <ExtractionStatusBadge status={extractionStatus} />
+          </div>
         </div>
       </Link>
       <button
@@ -113,6 +122,27 @@ const FILE_TYPE_TITLES: Record<FileType, string> = {
 export function FileList({ courseId }: FileListProps) {
   const { data, isLoading, error } = useFiles(courseId)
   const deleteFile = useDeleteFile()
+
+  // Get all file IDs for extraction status tracking
+  const fileIds = useMemo(() => {
+    if (!data?.items) return []
+    return data.items.map((f) => f.id)
+  }, [data?.items])
+
+  // Build file name map for toast notifications
+  const fileNames = useMemo(() => {
+    if (!data?.items) return {}
+    return data.items.reduce(
+      (acc, f) => {
+        acc[f.id] = f.name
+        return acc
+      },
+      {} as Record<string, string>
+    )
+  }, [data?.items])
+
+  // Fetch and subscribe to extraction statuses
+  const { getStatus } = useExtractionStatuses(fileIds, { fileNames })
 
   const handleDelete = (file: CourseFile) => {
     if (confirm(`Delete "${file.name}"? This will also delete all AI-generated content for this file.`)) {
@@ -153,6 +183,7 @@ export function FileList({ courseId }: FileListProps) {
           files={data.grouped[type]}
           courseId={courseId}
           onDelete={handleDelete}
+          getStatus={getStatus}
         />
       ))}
     </div>

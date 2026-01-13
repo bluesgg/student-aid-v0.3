@@ -8,6 +8,8 @@ interface PdfPageProps {
   scale: number
   width?: number
   onLoadSuccess?: () => void
+  /** Callback when page renders with actual dimensions */
+  onPageRender?: (pageNumber: number, height: number) => void
   /** Callback when canvas becomes available (for image region selection) */
   onCanvasReady?: (pageNumber: number, canvas: HTMLCanvasElement) => void
   /** Callback when canvas is unmounted */
@@ -22,6 +24,7 @@ function PdfPageComponent({
   scale,
   width,
   onLoadSuccess,
+  onPageRender,
   onCanvasReady,
   onCanvasUnmount,
 }: PdfPageProps) {
@@ -32,7 +35,16 @@ function PdfPageComponent({
   const handleRenderSuccess = useCallback(() => {
     setIsLoading(false)
     onLoadSuccess?.()
-  }, [onLoadSuccess])
+
+    // Report actual rendered height
+    if (onPageRender && containerRef.current) {
+      const pageElement = containerRef.current.querySelector('.react-pdf__Page')
+      if (pageElement) {
+        const height = pageElement.getBoundingClientRect().height
+        onPageRender(pageNumber, height)
+      }
+    }
+  }, [onLoadSuccess, onPageRender, pageNumber])
 
   // Canvas registration with MutationObserver
   useEffect(() => {

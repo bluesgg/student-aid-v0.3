@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { successResponse, errors } from '@/lib/api-response'
 import { getSignedUrl, deleteFile } from '@/lib/storage'
 import { removeCanonicalRef } from '@/lib/stickers/shared-cache'
+import { triggerContextExtraction } from '@/lib/context/extraction-trigger'
 
 interface RouteParams {
   params: { courseId: string; fileId: string }
@@ -38,6 +39,20 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
 
     // Generate signed URL for download
     const downloadUrl = await getSignedUrl(supabase, file.storage_key)
+
+    // Trigger context extraction on first PDF open (async, non-blocking)
+    if (file.content_hash) {
+      triggerContextExtraction({
+        fileId: file.id,
+        userId: user.id,
+        courseId: params.courseId,
+        pdfHash: file.content_hash,
+        totalPages: file.page_count,
+      }).catch((err) => {
+        // Non-fatal: log but don't fail the request
+        console.error('[Context] Error triggering extraction:', err)
+      })
+    }
 
     return successResponse({
       id: file.id,

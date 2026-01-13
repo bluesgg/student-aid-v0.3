@@ -150,7 +150,7 @@ export function searchForReference(
   let bestScore = 0
 
   // Search all pages
-  for (const [page, text] of pageTexts) {
+  for (const [page, text] of Array.from(pageTexts)) {
     const paragraphs = splitParagraphs(text)
     
     // Try English patterns
@@ -394,7 +394,7 @@ export function deriveMultiRegionReferenceContext(
   maxChars: number = 8000
 ): ReferenceContextResult {
   // Get unique pages where images are located
-  const uniquePages = [...new Set(regions.map(r => r.page))]
+  const uniquePages = Array.from(new Set(regions.map(r => r.page)))
   
   const contextParts: string[] = []
   const telemetryResults: Array<ReferenceContextResult['telemetry']> = []

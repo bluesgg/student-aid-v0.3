@@ -1,10 +1,8 @@
 # pdf-reader-modes Specification
 
 ## Purpose
-Defines the behavior of reading modes in the PDF viewer, allowing users to choose between single-page (page) navigation and continuous multi-page (scroll) navigation. This spec covers mode switching, current page tracking, navigation behavior, and user preference persistence.
-
+TBD - created by archiving change add-pdf-continuous-scroll. Update Purpose after archive.
 ## Requirements
-
 ### Requirement: Reading Mode Types
 The system SHALL provide two distinct reading modes for PDF viewing.
 
@@ -402,3 +400,4 @@ The system SHALL gracefully degrade when browser APIs are unavailable or fail.
 - **AND** no crash or blank screen occurs
 
 ---
+

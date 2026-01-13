@@ -1,12 +1,13 @@
 import { NextRequest } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
-import { successResponse, errors } from '@/lib/api-response'
+import { successResponse, errors, errorResponse } from '@/lib/api-response'
 import { extractPdfInfo } from '@/lib/pdf/extract'
 import { isScannedPdf } from '@/lib/pdf/detect-scanned'
 import { generateContentHash, calculatePDFBinaryHash } from '@/lib/pdf/hash'
 import { generateStorageKey, uploadFile } from '@/lib/storage'
 import { fileTypeSchema } from '@/lib/validations/course'
 import { upsertCanonicalDocument, addCanonicalRef } from '@/lib/stickers/shared-cache'
+import { validateStorageLimits } from '@/lib/context/storage-limits'
 
 interface RouteParams {
   params: { courseId: string }
@@ -135,6 +136,20 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       pdfInfo = await extractPdfInfo(buffer)
     } catch {
       return errors.invalidInput('Failed to process PDF file. The file may be corrupted.')
+    }
+
+    // Validate storage limits (file size, page count, course file limit, user quota)
+    const storageLimitValidation = await validateStorageLimits({
+      fileSize: buffer.length,
+      pageCount: pdfInfo.pageCount,
+      courseId: params.courseId,
+      userId: user.id,
+    })
+
+    if (!storageLimitValidation.valid && storageLimitValidation.error) {
+      const { code, message, details } = storageLimitValidation.error
+      const statusCode = code === 'EXTRACTION_QUOTA_EXCEEDED' ? 429 : 413
+      return errorResponse(code, message, statusCode, details)
     }
 
     // Check if file is scanned
