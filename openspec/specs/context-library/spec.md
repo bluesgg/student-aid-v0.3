@@ -1,10 +1,8 @@
 # context-library Specification
 
 ## Purpose
-Defines automatic extraction, storage, and retrieval of reusable knowledge entries (definitions, formulas, theorems, concepts, principles) from PDF documents to enhance AI-powered explanations and Q&A.
-
-## ADDED Requirements
-
+TBD - created by archiving change add-shared-context-library. Update Purpose after archive.
+## Requirements
 ### Requirement: Automatic Context Extraction on First Open
 The system SHALL automatically trigger context extraction when a user first opens a PDF in the study page (P5).
 
@@ -395,3 +393,4 @@ The system SHALL prevent duplicate entries within the same PDF.
 - **WHEN** the system stores entries
 - **THEN** both entries are kept (different titles)
 - **AND** database query can match either variant
+

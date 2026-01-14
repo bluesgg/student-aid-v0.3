@@ -174,12 +174,25 @@ export async function pickupContextJobs(
     .order('total_words', { ascending: true }) // Prioritize smaller files
     .limit(limit)
 
+  console.log('[Context Worker] Pickup query:', {
+    now,
+    lockTimeout,
+    jobsFound: jobs?.length ?? 0,
+    error: error?.message,
+  })
+
   if (error) {
     console.error('[Context Worker] Error picking up jobs:', error)
     return []
   }
 
   if (!jobs || jobs.length === 0) {
+    // Debug: check if any jobs exist at all
+    const { data: allJobs } = await supabase
+      .from('context_extraction_jobs')
+      .select('id, status, run_after, locked_at')
+      .limit(5)
+    console.log('[Context Worker] All jobs in DB:', allJobs)
     return []
   }
 
@@ -482,6 +495,18 @@ export async function processContextJob(job: ExtractionJob): Promise<number> {
             console.error('[Context Worker] Error inserting entries:', insertError)
           } else {
             entriesCreated += toInsert.length
+
+            // Log created entries in development for debugging
+            if (process.env.NODE_ENV === 'development') {
+              console.log('[Context Worker] Created entries:')
+              toInsert.forEach((entry, i) => {
+                console.log(`  [${i + 1}] ${entry.type.toUpperCase()}: ${entry.title}`)
+                console.log(`      Score: ${entry.qualityScore.toFixed(2)} | Page: ${entry.sourcePage}`)
+                console.log(`      Keywords: ${entry.keywords.join(', ')}`)
+                console.log(`      Content: ${entry.content.slice(0, 150)}...`)
+              })
+            }
+
             // Record entries created metric
             recordMetric('total_entries_created', toInsert.length).catch(() => {})
 

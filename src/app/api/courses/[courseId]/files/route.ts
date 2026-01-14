@@ -8,6 +8,8 @@ import { generateStorageKey, uploadFile } from '@/lib/storage'
 import { fileTypeSchema } from '@/lib/validations/course'
 import { upsertCanonicalDocument, addCanonicalRef } from '@/lib/stickers/shared-cache'
 import { validateStorageLimits } from '@/lib/context/storage-limits'
+import { triggerContextExtraction } from '@/lib/context/extraction-trigger'
+import { runContextWorker } from '@/lib/context/extraction-worker'
 
 interface RouteParams {
   params: { courseId: string }
@@ -224,6 +226,40 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       console.error('Error adding canonical ref:', refError)
       // Non-fatal: file was created, canonical ref is optional for MVP
     }
+
+    // Trigger context extraction immediately on upload (async, non-blocking)
+    // Pass the buffer to avoid re-downloading the PDF
+    triggerContextExtraction({
+      fileId: fileRecord.id,
+      userId: user.id,
+      courseId: params.courseId,
+      pdfHash: binaryContentHash,
+      totalPages: pdfInfo.pageCount,
+      pdfBuffer: buffer,
+    })
+      .then(async (result) => {
+        console.log('[Context] Extraction triggered on upload:', {
+          fileId: fileRecord.id,
+          cached: result.cached,
+          jobId: result.jobId,
+        })
+        // In development, run worker immediately to process the job
+        if (process.env.NODE_ENV === 'development' && result.jobId) {
+          // Small delay to ensure DB transaction is fully committed
+          await new Promise((resolve) => setTimeout(resolve, 500))
+          console.log('[Context] Running worker in dev mode for job:', result.jobId)
+          try {
+            const workerResult = await runContextWorker()
+            console.log('[Context] Dev worker completed:', workerResult)
+          } catch (workerError) {
+            console.error('[Context] Dev worker error:', workerError)
+          }
+        }
+      })
+      .catch((err) => {
+        // Non-fatal: log but don't fail the upload
+        console.error('[Context] Error triggering extraction:', err)
+      })
 
     return successResponse(
       {

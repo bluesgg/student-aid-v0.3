@@ -89,7 +89,10 @@ export function useExtractionStatuses(
   const fileNamesRef = useRef(fileNames)
   fileNamesRef.current = fileNames
 
-  // Fetch all statuses on mount
+  // Track previous statuses for toast notifications
+  const prevStatusesRef = useRef<Record<string, ExtractionStatus>>({})
+
+  // Fetch all statuses on mount and poll for active jobs
   useEffect(() => {
     const currentFileIds = fileIdsRef.current
     if (currentFileIds.length === 0) {
@@ -98,9 +101,10 @@ export function useExtractionStatuses(
     }
 
     let cancelled = false
+    let pollTimer: NodeJS.Timeout | null = null
 
-    async function fetchAllStatuses() {
-      setLoading(true)
+    async function fetchAllStatuses(isInitial = false) {
+      if (isInitial) setLoading(true)
       const newStatuses: Record<string, ExtractionStatusData> = {}
 
       // Fetch in parallel with concurrency limit
@@ -124,17 +128,57 @@ export function useExtractionStatuses(
       }
 
       if (!cancelled) {
+        // Check for status transitions and show toast notifications
+        Object.entries(newStatuses).forEach(([fileId, status]) => {
+          const prevStatus = prevStatusesRef.current[fileId]
+          if (prevStatus && prevStatus !== status.status) {
+            if (status.status === 'ready' && (prevStatus === 'processing' || prevStatus === 'pending')) {
+              const fileName = fileNamesRef.current[fileId]
+              addToast({
+                type: 'success',
+                title: 'Document analysis complete',
+                message: fileName
+                  ? `"${fileName}" is ready for enhanced AI features`
+                  : 'AI features are now enhanced for this document',
+                duration: 5000,
+              })
+            } else if (status.status === 'failed' && (prevStatus === 'processing' || prevStatus === 'pending')) {
+              const fileName = fileNamesRef.current[fileId]
+              addToast({
+                type: 'warning',
+                title: 'Document analysis partially complete',
+                message: fileName
+                  ? `"${fileName}" - AI features will work with available context`
+                  : 'AI features will work with available context',
+                duration: 5000,
+              })
+            }
+          }
+          prevStatusesRef.current[fileId] = status.status
+        })
+
         setStatuses(newStatuses)
-        setLoading(false)
+        if (isInitial) setLoading(false)
+
+        // Check if any files are still processing/pending
+        const hasActiveJobs = Object.values(newStatuses).some(
+          (s) => s.status === 'processing' || s.status === 'pending'
+        )
+
+        // Continue polling if there are active jobs
+        if (hasActiveJobs && !cancelled) {
+          pollTimer = setTimeout(() => fetchAllStatuses(false), 2000) // Poll every 2 seconds
+        }
       }
     }
 
-    fetchAllStatuses()
+    fetchAllStatuses(true)
 
     return () => {
       cancelled = true
+      if (pollTimer) clearTimeout(pollTimer)
     }
-  }, [fileIdsKey])
+  }, [fileIdsKey, addToast])
 
   // Subscribe to Realtime updates for extraction jobs
   useEffect(() => {
