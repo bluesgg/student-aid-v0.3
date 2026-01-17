@@ -7,67 +7,29 @@ import { signedUrlCache } from '@/lib/pdf/url-cache'
 import { cacheSyncService, type CacheEvent } from '@/lib/pdf/cache-sync'
 import { debugLog } from '@/lib/debug'
 
-/**
- * Cache status for the PDF file
- */
 export type CacheStatus = 'loading' | 'hit' | 'miss' | 'stale' | 'downloading'
 
-/**
- * Download progress for the PDF file
- */
 export interface DownloadProgress {
-  /** Bytes loaded so far */
   loaded: number
-  /** Total bytes (0 if unknown) */
   total: number
-  /** Percentage complete (0-100), or -1 if total unknown */
   percent: number
 }
 
-/**
- * Return type for useCachedFile hook
- */
 export interface UseCachedFileReturn {
-  /** File metadata (from useFile) */
   file: ReturnType<typeof useFile>['data']
-  /** Whether file metadata is loading */
   isLoading: boolean
-  /** Error from loading */
   error: Error | null
-  /** PDF binary data (ArrayBuffer) or URL string */
   pdfSource: ArrayBuffer | string | null
-  /** Whether loading from cache */
   isCached: boolean
-  /** Cache status */
   cacheStatus: CacheStatus
-  /** Download progress (when downloading) */
   downloadProgress: DownloadProgress | null
-  /** Manually refetch the file */
   refetch: () => void
 }
 
 /**
  * Hook for fetching PDF files with IndexedDB caching.
- *
- * Provides:
- * - Automatic caching of PDF binary data in IndexedDB
- * - Cache validation via content hash
- * - Multi-tab synchronization via BroadcastChannel
- * - Stale cache revalidation on tab focus
- * - Fallback to URL when cache is unavailable
- *
- * @param courseId - Course ID
- * @param fileId - File ID
- * @param options - Optional configuration
- * @returns Cached file data and status
- *
- * @example
- * ```tsx
- * const { file, pdfSource, isCached, cacheStatus } = useCachedFile(courseId, fileId)
- *
- * // pdfSource can be passed to react-pdf Document component
- * <Document file={pdfSource} />
- * ```
+ * Provides automatic caching, cache validation via content hash,
+ * multi-tab synchronization, and fallback to URL when cache is unavailable.
  */
 export function useCachedFile(
   courseId: string,
@@ -97,9 +59,6 @@ export function useCachedFile(
   const downloadUrl = file?.downloadUrl
   const contentHash = file?.contentHash
 
-  /**
-   * Download PDF from URL and optionally cache it
-   */
   const downloadPdf = useCallback(async (
     url: string,
     hash: string | null | undefined,
@@ -162,9 +121,6 @@ export function useCachedFile(
     }
   }, [])
 
-  /**
-   * Load PDF from cache or download
-   */
   const loadPdf = useCallback(async () => {
     if (!downloadUrl || !fileId) return
 
@@ -228,46 +184,35 @@ export function useCachedFile(
     }
   }, [downloadUrl, fileId, contentHash, enableCache, downloadPdf])
 
-  // Load PDF when file data is available
   useEffect(() => {
     if (fileQuery.data?.downloadUrl) {
       loadPdf()
     }
-
     return () => {
-      // Cleanup on unmount
-      if (abortControllerRef.current) {
-        abortControllerRef.current.abort()
-      }
+      abortControllerRef.current?.abort()
     }
   }, [fileQuery.data?.downloadUrl, loadPdf])
 
-  // Subscribe to cache events from other tabs
   useEffect(() => {
     if (!enableCache) return
 
-    const unsubscribe = cacheSyncService.subscribe((event: CacheEvent) => {
-      if (event.type === 'pdf_cache_invalidated' && event.fileId === fileId) {
-        debugLog('[useCachedFile] Cache invalidated for:', fileId)
-        isStaleRef.current = true
-        setCacheStatus('stale')
-      }
+    return cacheSyncService.subscribe((event: CacheEvent) => {
+      const shouldInvalidate =
+        (event.type === 'pdf_cache_invalidated' && event.fileId === fileId) ||
+        event.type === 'pdf_cache_cleared'
 
-      if (event.type === 'pdf_cache_cleared') {
-        debugLog('[useCachedFile] Cache cleared')
+      if (shouldInvalidate) {
+        debugLog('[useCachedFile] Cache invalidated/cleared for:', fileId)
         isStaleRef.current = true
         setCacheStatus('stale')
       }
     })
-
-    return unsubscribe
   }, [fileId, enableCache])
 
-  // Revalidate on tab focus if cache is stale
   useEffect(() => {
     if (!enableCache) return
 
-    const handleFocus = () => {
+    function handleFocus(): void {
       if (isStaleRef.current && downloadUrl) {
         debugLog('[useCachedFile] Revalidating stale cache on focus')
         isStaleRef.current = false
@@ -275,7 +220,7 @@ export function useCachedFile(
       }
     }
 
-    const handleVisibilityChange = () => {
+    function handleVisibilityChange(): void {
       if (document.visibilityState === 'visible') {
         handleFocus()
       }
@@ -290,7 +235,6 @@ export function useCachedFile(
     }
   }, [enableCache, downloadUrl, loadPdf])
 
-  // Refetch function
   const refetch = useCallback(() => {
     fileQuery.refetch()
     loadPdf()

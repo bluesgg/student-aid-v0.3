@@ -17,18 +17,16 @@ interface StickerPanelProps {
   totalPages: number
   /** Callback when hovering a sticker (for highlighting regions in PDF) */
   onStickerHover?: (stickerId: string | null, regionIds: string[]) => void
-  /** Callback to start auto-explain session from current page */
-  onStartAutoExplain?: () => void
+  /** Callback to toggle auto-explain mode (start or cancel) */
+  onToggleAutoExplain?: () => void
   /** Whether auto-explain session is active */
   isAutoExplainActive?: boolean
   /** Whether auto-explain is starting */
   isAutoExplainStarting?: boolean
-  /** Progress of the auto-explain session */
-  autoExplainProgress?: { completed: number; total: number }
-  autoExplainWindowRange?: { start: number; end: number }
-  autoExplainError?: string | null
   /** Whether the current page is being processed by auto-explain */
   isCurrentPageProcessing?: boolean
+  /** Callback to route sticker text selection explain to Q&A panel */
+  onExplainToQA?: (selectedText: string, parentContext?: string) => void
 }
 
 export function StickerPanel({
@@ -39,13 +37,11 @@ export function StickerPanel({
   isScanned,
   totalPages,
   onStickerHover,
-  onStartAutoExplain,
+  onToggleAutoExplain,
   isAutoExplainActive = false,
   isAutoExplainStarting = false,
-  autoExplainProgress,
-  autoExplainWindowRange,
-  autoExplainError,
   isCurrentPageProcessing = false,
+  onExplainToQA,
 }: StickerPanelProps) {
   const [streamingSelection, setStreamingSelection] = useState<string | null>(null)
 
@@ -175,9 +171,20 @@ export function StickerPanel({
     [deleteSticker, fileId]
   )
 
-  // Handle follow-up question
+  // Handle follow-up question - route to Q&A panel if callback provided
   const handleFollowUp = useCallback(
     (parentId: string, selectedText: string) => {
+      // Find the parent sticker to get its content as context
+      const parentSticker = stickersData?.items?.find(s => s.id === parentId)
+      const parentContext = parentSticker?.contentMarkdown
+
+      // Route to Q&A panel if callback provided
+      if (onExplainToQA) {
+        onExplainToQA(selectedText, parentContext)
+        return
+      }
+
+      // Fallback to old behavior (create nested sticker)
       setStreamingSelection(selectedText)
       explainSelection({
         courseId,
@@ -191,7 +198,7 @@ export function StickerPanel({
         resetSelection()
       })
     },
-    [explainSelection, courseId, fileId, currentPage, pdfType, resetSelection]
+    [explainSelection, courseId, fileId, currentPage, pdfType, resetSelection, onExplainToQA, stickersData]
   )
 
   // Handle sticker hover for region highlighting
@@ -230,11 +237,6 @@ export function StickerPanel({
     onStickerHover?.(null, [])
   }, [onStickerHover, setHoveredStickerId, setHoveredStickerAnchor])
 
-  // Calculate progress percentage
-  const progressPercentage = autoExplainProgress
-    ? (autoExplainProgress.completed / autoExplainProgress.total) * 100
-    : 0
-
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -252,73 +254,42 @@ export function StickerPanel({
         </div>
       </div>
 
-      {/* Auto-Explain Button with Progress Bar */}
-      {!isScanned && onStartAutoExplain && (
+      {/* Auto-Explain Toggle Button */}
+      {!isScanned && onToggleAutoExplain && (
         <div className="border-b border-gray-200 bg-gray-50 px-4 py-3">
           <button
-            onClick={onStartAutoExplain}
-            disabled={isAutoExplainActive || isAutoExplainStarting}
-            className={`w-full overflow-hidden rounded-lg transition-all duration-200 ${
-              isAutoExplainStarting || isAutoExplainActive ? 'animate-in fade-in slide-in-from-top-2' : ''
-            }`}
+            onClick={onToggleAutoExplain}
+            disabled={isAutoExplainStarting}
+            className="w-full flex items-center justify-between gap-3 px-4 py-2.5 rounded-lg border border-gray-200 bg-white hover:bg-gray-50 transition-colors"
           >
-            {/* Button body */}
-            <div
-              className={`flex items-center justify-center gap-2 px-4 py-2.5 ${
-                autoExplainError
-                  ? 'bg-red-50 text-red-700'
-                  : isAutoExplainActive
-                    ? 'bg-green-50 text-green-700'
-                    : isAutoExplainStarting
-                      ? 'bg-blue-50 text-blue-600'
-                      : 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
-              }`}
-            >
-              {/* Icon / Loading Animation */}
+            <div className="flex items-center gap-2">
+              {/* Icon */}
               {isAutoExplainStarting ? (
-                <div className="flex gap-1">
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-                  <div className="w-2 h-2 bg-blue-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-                </div>
-              ) : autoExplainError ? (
-                <svg className="h-5 w-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+                <div className="w-4 h-4 border-2 border-blue-300 border-t-blue-600 rounded-full animate-spin" />
               ) : isAutoExplainActive ? (
                 <div className="w-4 h-4 border-2 border-green-300 border-t-green-600 rounded-full animate-spin" />
               ) : (
-                <svg className="h-5 w-5" fill="currentColor" viewBox="0 0 24 24">
-                  <path d="M8 5v14l11-7z" />
+                <svg className="h-5 w-5 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" />
                 </svg>
               )}
-
-              {/* Text - shows page range when active */}
-              <span className="text-sm font-medium">
-                {isAutoExplainStarting
-                  ? 'Starting...'
-                  : autoExplainError
-                    ? 'Error - Try Again'
-                    : isAutoExplainActive && autoExplainProgress && autoExplainWindowRange
-                      ? `Pages ${autoExplainWindowRange.start}-${autoExplainWindowRange.end} (${autoExplainProgress.completed}/${autoExplainProgress.total})`
-                      : isAutoExplainActive
-                        ? 'Explaining...'
-                        : 'Explain From This Page'}
+              <span className="text-sm font-medium text-gray-700">
+                {isAutoExplainStarting ? 'Starting...' : 'Auto Explain'}
               </span>
             </div>
 
-            {/* Progress bar (only shows when active) */}
-            {isAutoExplainActive && autoExplainProgress && (
-              <div className="h-1.5 bg-green-100">
-                <div
-                  className="h-full bg-green-500 transition-all duration-500 ease-out"
-                  style={{ width: `${progressPercentage}%` }}
-                />
-              </div>
-            )}
-
-            {/* Error progress bar */}
-            {autoExplainError && <div className="h-1.5 bg-red-500" />}
+            {/* Toggle Switch */}
+            <div
+              className={`relative w-11 h-6 rounded-full transition-colors ${
+                isAutoExplainActive ? 'bg-green-500' : 'bg-gray-300'
+              }`}
+            >
+              <div
+                className={`absolute top-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  isAutoExplainActive ? 'translate-x-5' : 'translate-x-0.5'
+                }`}
+              />
+            </div>
           </button>
         </div>
       )}
@@ -459,7 +430,7 @@ export function StickerPanel({
             <p className="mt-1 text-xs text-gray-500">
               {isScanned
                 ? 'AI features are limited for scanned PDFs'
-                : 'Click "Explain From This Page" or select text in the PDF'}
+                : 'Turn on "Auto Explain" or select text in the PDF'}
             </p>
           </div>
         )}

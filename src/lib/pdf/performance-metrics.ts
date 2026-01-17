@@ -1,13 +1,9 @@
 /**
  * PDF Load Performance Metrics Module
- *
  * Tracks and records PDF loading performance metrics for analytics.
- * Follows the pattern from sticker-metrics.ts.
  */
 
 import { debugLog } from '@/lib/debug'
-
-// ==================== Types ====================
 
 export interface PdfLoadMetrics {
   fileId: string
@@ -40,31 +36,8 @@ export interface PdfLoadMetricsSnapshot {
   totalBytesLoaded: number
 }
 
-// ==================== Performance Tracker Class ====================
-
 /**
  * Tracks the timing of a single PDF load operation.
- *
- * @example
- * ```tsx
- * const tracker = new PdfLoadTracker(fileId)
- *
- * // In component:
- * useEffect(() => {
- *   tracker.start()
- *   return () => tracker.abort()
- * }, [])
- *
- * // When first page renders:
- * tracker.markFirstPage()
- *
- * // When document fully loads:
- * tracker.complete({
- *   totalPages: numPages,
- *   fileSizeBytes: size,
- *   cacheHit: isCached
- * })
- * ```
  */
 export class PdfLoadTracker {
   private fileId: string
@@ -77,9 +50,6 @@ export class PdfLoadTracker {
     this.fileId = fileId
   }
 
-  /**
-   * Start tracking the load operation
-   */
   start(): void {
     if (this.startTime !== null) {
       debugLog('[PdfLoadTracker] Already started, ignoring duplicate start')
@@ -89,9 +59,6 @@ export class PdfLoadTracker {
     debugLog('[PdfLoadTracker] Started tracking for:', this.fileId)
   }
 
-  /**
-   * Mark when the first page becomes visible
-   */
   markFirstPage(): void {
     if (this.firstPageTime !== null) {
       debugLog('[PdfLoadTracker] First page already marked, ignoring')
@@ -106,18 +73,12 @@ export class PdfLoadTracker {
     debugLog('[PdfLoadTracker] First page visible in:', elapsed, 'ms')
   }
 
-  /**
-   * Mark the load as aborted (e.g., component unmounted before load completed)
-   */
   abort(): void {
     if (this.completed) return
     this.aborted = true
     debugLog('[PdfLoadTracker] Aborted for:', this.fileId)
   }
 
-  /**
-   * Complete the tracking and record metrics
-   */
   async complete(options: {
     totalPages: number | null
     fileSizeBytes: number | null
@@ -159,21 +120,14 @@ export class PdfLoadTracker {
     })
   }
 
-  /**
-   * Get elapsed time since start (for debugging)
-   */
   getElapsedMs(): number | null {
     if (this.startTime === null) return null
     return Math.round(performance.now() - this.startTime)
   }
 }
 
-// ==================== API Functions ====================
-
 /**
- * Record a PDF load metric to the server
- *
- * This is a fire-and-forget operation - errors are logged but not thrown.
+ * Record a PDF load metric to the server (fire-and-forget).
  */
 export async function recordPdfLoadMetric(metric: PdfLoadMetrics): Promise<void> {
   try {
@@ -200,10 +154,7 @@ export async function recordPdfLoadMetric(metric: PdfLoadMetrics): Promise<void>
 }
 
 /**
- * Get aggregated PDF load metrics for a time period
- *
- * @param period - Time period to aggregate ('hour', 'day', 'week')
- * @returns Aggregated metrics snapshot
+ * Get aggregated PDF load metrics for a time period.
  */
 export async function getPdfLoadMetrics(
   period: 'hour' | 'day' | 'week' = 'day'
@@ -223,37 +174,6 @@ export async function getPdfLoadMetrics(
   }
 }
 
-// ==================== React Hook ====================
-
-/**
- * Hook to create and manage a PDF load tracker.
- *
- * This hook should be used in the PDF viewer component to track loading performance.
- *
- * @example
- * ```tsx
- * const tracker = usePdfLoadTracker(fileId)
- *
- * useEffect(() => {
- *   tracker.start()
- *   return () => tracker.abort()
- * }, [])
- *
- * // When first page renders:
- * const handleFirstPageReady = () => {
- *   tracker.markFirstPage()
- * }
- *
- * // When document loads:
- * const handleDocumentLoad = (pdf) => {
- *   tracker.complete({
- *     totalPages: pdf.numPages,
- *     fileSizeBytes: null, // or actual size if available
- *     cacheHit: isCached
- *   })
- * }
- * ```
- */
 export function createPdfLoadTracker(fileId: string): PdfLoadTracker {
   return new PdfLoadTracker(fileId)
 }

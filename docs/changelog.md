@@ -4,6 +4,147 @@
 
 ---
 
+## [2026-01-17] 滚动模式功能完善 (Scroll Mode Feature Parity)
+
+**OpenSpec Change ID**: `add-scroll-mode-feature-parity`
+**实施日期**: 2026-01-17
+**状态**: ✅ 已完成并归档
+
+### 📋 更新概述
+
+实现滚动模式(Scroll Mode)与页面模式(Page Mode)的功能对等,使贴纸交互和AI功能在两种模式下均可正常使用,符合设计规范要求:"贴纸交互/AI功能两种模式通用"。
+
+### 🎯 核心功能
+
+#### 1. 图片检测叠加层 (ImageDetectionOverlay)
+- 滚动模式下在可见页面显示自动检测到的图片区域
+- 鼠标悬停时显示高亮边框(2px蓝色)和半透明填充(10%)
+- 显示图片序号徽章
+
+#### 2. 延迟提取加载指示器 (LazyExtractionLoading)
+- 当某页正在检测图片时显示"Detecting images..."指示器
+- 检测完成后自动淡出并显示检测到的图片
+
+#### 3. 贴纸锚点高亮 (StickerAnchorHighlight)
+- 支持双向悬停高亮:
+  - **Sticker → PDF**: 悬停贴纸卡片时,PDF上对应区域高亮(边框3px,填充30%透明度)
+  - **PDF → Sticker**: 悬停PDF区域时,对应贴纸卡片高亮(2px蓝色边框,浅蓝背景)
+- 仅对可见页面生效(性能优化)
+
+#### 4. 页面区域点击反馈
+- 点击页面区域时,所有已检测图片短暂高亮(虚线蓝色边框,2秒后淡出)
+- 标记模式(Mark Mode)下点击显示"No image detected"弹窗和"Draw manually"按钮
+
+#### 5. 贴纸命中测试 (PDF → Sticker)
+- 鼠标在PDF页面移动时检测是否悬停在贴纸锚点区域
+- 命中时高亮对应的贴纸卡片
+
+### 🔧 技术实现
+
+**修改的文件**:
+
+| 文件 | 变更内容 |
+|------|---------|
+| `src/features/reader/components/virtual-pdf-list.tsx` | 新增9个props,PageRow组件渲染叠加层 |
+| `src/features/reader/components/pdf-viewer.tsx` | 新增滚动模式适配器,传递props到VirtualPdfList |
+
+**新增Props (VirtualPdfListProps)**:
+```typescript
+// 自动图片检测
+isAutoImageDetectionEnabled?: boolean
+detectedImagesByPage?: Map<number, DetectedImageRect[]>
+showHighlightFeedback?: boolean
+loadingPages?: Set<number>
+
+// 贴纸锚点高亮
+hoveredStickerRect?: { x, y, width, height } | null
+hoveredStickerPage?: number | null
+
+// 事件处理器
+onPageAreaClick?: (page: number, e: MouseEvent) => void
+onStickerHitTestMove?: (e: MouseEvent, pageElement, page) => void
+onStickerHitTestLeave?: () => void
+```
+
+**滚动模式适配器 (PdfViewer)**:
+- `detectedImagesByPage`: 将当前页图片数据转换为Map格式
+- `loadingPages`: 将当前页加载状态转换为Set格式
+- `handleScrollModePageAreaClick`: 适配点击处理器接受页码参数
+- `handleScrollModeStickerHitTest`: 适配命中测试处理器接受页码参数
+
+### ⚠️ 当前限制
+
+图片检测目前仅对"当前页"(最大可见面积页)生效。完整的多页图片检测需要:
+1. 扩展 `useImageDetection` hook 支持多页参数
+2. 实现可见页面的请求批处理
+3. 跨页面的图片缓存
+
+此限制在MVP阶段可接受,因为滚动时当前页会更新,叠加层会正确渲染。
+
+### ✅ 验收标准
+
+- [x] 滚动模式下可见页面显示图片检测叠加层
+- [x] 延迟提取加载指示器正常显示
+- [x] 双向贴纸高亮功能正常
+- [x] 点击页面显示高亮反馈
+- [x] 标记模式弹窗正常工作
+- [x] TypeScript类型检查通过
+- [x] ESLint检查通过(仅pre-existing警告)
+
+### 📖 相关文档
+
+- **设计规范**: `docs/02_page_and_flow_design.md` (5.2节 "贴纸交互/AI功能两种模式通用")
+- **OpenSpec归档**: `openspec/changes/archive/2026-01-17-add-scroll-mode-feature-parity/`
+- **规范更新**: `openspec/specs/pdf-viewer-interaction/spec.md` (+4新增, ~1修改)
+
+---
+
+## [2026-01-17] 页面模式键盘导航
+
+**实施日期**: 2026-01-17
+**状态**: ✅ 已完成
+
+### 📋 更新概述
+
+在 PDF 阅读器的页面模式（Page mode）下，支持使用键盘方向键快速切换页面。
+
+### 🎯 核心功能
+
+#### 键盘快捷键
+| 按键 | 功能 |
+|-----|------|
+| 右箭头 (→) / 下箭头 (↓) | 下一页 |
+| 左箭头 (←) / 上箭头 (↑) | 上一页 |
+
+#### 行为规则
+- **仅页面模式生效**: 滚动模式(Scroll mode)保持原生滚动行为
+- **智能输入排除**: 在输入框（页码输入等）中按键时不触发页面切换
+- **边界保护**: 在第一页/最后一页时自动禁止越界
+
+### 🔧 技术实现
+
+**修改的文件**:
+- `src/features/reader/components/pdf-viewer.tsx` - 添加键盘事件监听
+
+**实现方式**:
+- 全局 `keydown` 事件监听
+- 复用现有 `handleNextPage` / `handlePreviousPage` 函数
+- 排除 `INPUT`、`TEXTAREA`、`contentEditable` 元素的按键事件
+
+### ✅ 验收标准
+
+- [x] 页面模式下右箭头/下箭头切换到下一页
+- [x] 页面模式下左箭头/上箭头切换到上一页
+- [x] 输入框中按箭头键不触发页面切换
+- [x] 滚动模式下箭头键保持原生滚动
+- [x] TypeScript 类型检查通过
+
+### 📖 相关文档
+
+- **功能规格**: `docs/02_page_and_flow_design.md` (5.2 PDF阅读模式)
+
+---
+
 ## [2026-01-11] 跨用户内容去重与共享缓存
 
 **OpenSpec Change ID**: `update-sticker-word-count-logic`  
@@ -288,5 +429,5 @@ SUPABASE_SERVICE_ROLE_KEY=your-service-role-key
 
 ---
 
-**文档最后更新**: 2026-01-11  
+**文档最后更新**: 2026-01-17 (滚动模式功能完善)
 **维护者**: 开发团队

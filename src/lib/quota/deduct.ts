@@ -1,20 +1,11 @@
-/**
- * Quota deduction utilities.
- * Atomically decrements quota after successful AI operations.
- */
-
 import { SupabaseClient } from '@supabase/supabase-js'
-import { QuotaBucket, QuotaInfo, DEFAULT_QUOTA_LIMITS } from './types'
+import { QuotaBucket, QuotaInfo, DEFAULT_QUOTA_LIMITS, calculateNextResetDate } from './types'
 
 export interface DeductResult {
   success: boolean
   quota: QuotaInfo
 }
 
-/**
- * Atomically deduct 1 from a user's quota.
- * Returns the updated quota info.
- */
 export async function deductQuota(
   supabase: SupabaseClient,
   userId: string,
@@ -47,10 +38,6 @@ export async function deductQuota(
   }
 }
 
-/**
- * Fallback deduction method using standard update.
- * Less safe against race conditions but works without custom RPC.
- */
 async function fallbackDeductQuota(
   supabase: SupabaseClient,
   userId: string,
@@ -71,9 +58,7 @@ async function fallbackDeductQuota(
 
   // If no quota exists, create one and deduct
   if (!existing) {
-    const resetAt = new Date()
-    resetAt.setMonth(resetAt.getMonth() + 1)
-    resetAt.setHours(0, 0, 0, 0)
+    const resetAt = calculateNextResetDate()
 
     const { data: created, error: createError } = await supabase
       .from('quotas')
@@ -131,10 +116,6 @@ async function fallbackDeductQuota(
   }
 }
 
-/**
- * Deduct quota only if tokens were received (for streaming responses).
- * Call this after confirming at least one token was received.
- */
 export async function conditionalDeductQuota(
   supabase: SupabaseClient,
   userId: string,

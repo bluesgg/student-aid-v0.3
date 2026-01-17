@@ -187,10 +187,63 @@
     "stickers": "标注",
     "qa": "问答",
     "markImage": "标记图片",
+    "selectImages": "选择图片",
     "exitMarkMode": "退出",
+    "exitSelection": "退出选择",
     "noImageDetected": "此位置未检测到图片",
     "drawManually": "手动框选",
-    "markImageTooltip": "点击图片进行解释，或手动框选遗漏的图片"
+    "markImageTooltip": "点击图片进行解释，或手动框选遗漏的图片",
+    "scannedNotAvailable": "扫描件 PDF 不可用",
+    "toolbar": {
+      "previousPage": "上一页",
+      "nextPage": "下一页",
+      "zoomIn": "放大",
+      "zoomOut": "缩小",
+      "generating": "生成中..."
+    },
+    "zoom": {
+      "fitWidth": "适应宽度",
+      "fitPage": "适应页面",
+      "custom": "自定义",
+      "label": "缩放"
+    },
+    "readerMode": {
+      "pageTitle": "单页视图",
+      "pageLabel": "单页",
+      "scrollTitle": "连续滚动视图",
+      "scrollLabel": "滚动"
+    },
+    "textSelection": {
+      "explain": "AI 解释",
+      "dismiss": "关闭"
+    },
+    "imageDetection": {
+      "failed": "图片检测失败",
+      "progress": "图片：{current}/{total} 页",
+      "detecting": "正在检测图片...",
+      "deleteManualImage": "删除此手动标记的图片",
+      "manualBadge": "手动"
+    },
+    "imageExtraction": {
+      "complete": "图片检测完成",
+      "partial": "图片检测部分完成",
+      "detecting": "正在检测图片...",
+      "pages": "{current}/{total} 页"
+    },
+    "session": {
+      "complete": "生成完成",
+      "canceled": "已取消",
+      "generating": "正在生成解释...",
+      "stop": "停止生成",
+      "pageRange": "第 {start}-{end} 页",
+      "progress": "{completed}/{total} 已完成",
+      "inProgress": "{count} 处理中",
+      "failed": "{count} 失败"
+    },
+    "errors": {
+      "fileNotFound": "文件未找到",
+      "loadFailed": "PDF 加载失败"
+    }
   },
   "pdf": {
     "loading": {

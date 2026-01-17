@@ -4,6 +4,13 @@ import { useQuery, keepPreviousData } from '@tanstack/react-query'
 import { debugLog } from '@/lib/debug'
 
 /**
+ * Detection method for an image
+ * - 'ops': Automatically detected by the system during PDF upload
+ * - 'manual': Manually detected by user clicking in mark mode
+ */
+export type DetectionMethod = 'ops' | 'manual'
+
+/**
  * Detected image rectangle (normalized 0-1 coordinates)
  */
 export interface DetectedImageRect {
@@ -15,6 +22,8 @@ export interface DetectedImageRect {
     width: number
     height: number
   }
+  /** How the image was detected. Manual images can be deleted by users. */
+  detectionMethod?: DetectionMethod
 }
 
 /**
@@ -187,4 +196,81 @@ export function denormalizeRect(
     width: rect.width * pageWidth,
     height: rect.height * pageHeight,
   }
+}
+
+/**
+ * Response from the detect API
+ */
+export interface DetectImageAtPositionResult {
+  found: boolean
+  image?: {
+    id?: string
+    rect: { x: number; y: number; width: number; height: number }
+  }
+  page: number
+}
+
+/**
+ * Detect if there's an image at the specified click position.
+ * Uses the backend image extraction algorithm to check for images.
+ *
+ * @param courseId - Course ID
+ * @param fileId - File ID
+ * @param page - Page number (1-indexed)
+ * @param clickX - Normalized X position (0-1)
+ * @param clickY - Normalized Y position (0-1)
+ * @returns Detection result with image rect if found
+ */
+export async function detectImageAtPosition(
+  courseId: string,
+  fileId: string,
+  page: number,
+  clickX: number,
+  clickY: number
+): Promise<DetectImageAtPositionResult> {
+  const response = await fetch(
+    `/api/courses/${courseId}/files/${fileId}/images/detect`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ page, clickX, clickY }),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error('Failed to detect image at position')
+  }
+
+  const json = await response.json()
+  return json.data as DetectImageAtPositionResult
+}
+
+/**
+ * Delete a manually detected image.
+ * Only images with detectionMethod='manual' can be deleted.
+ *
+ * @param courseId - Course ID
+ * @param fileId - File ID
+ * @param imageId - ID of the detected image to delete
+ * @returns Success status
+ */
+export async function deleteDetectedImage(
+  courseId: string,
+  fileId: string,
+  imageId: string
+): Promise<{ deleted: boolean; imageId: string }> {
+  const response = await fetch(
+    `/api/courses/${courseId}/files/${fileId}/images/${imageId}`,
+    {
+      method: 'DELETE',
+    }
+  )
+
+  if (!response.ok) {
+    const json = await response.json()
+    throw new Error(json.error?.message || 'Failed to delete detected image')
+  }
+
+  const json = await response.json()
+  return json.data
 }

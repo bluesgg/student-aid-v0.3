@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState, useEffect } from 'react'
+import { useCallback, useState } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCourse } from '@/features/courses/hooks/use-courses'
@@ -8,13 +8,11 @@ import { useCachedFile } from '@/features/files/hooks/use-cached-file'
 import { ResizableLayout } from '@/features/layout/components/resizable-layout'
 import { PdfViewer } from '@/features/reader/components/pdf-viewer'
 import { StickerPanel } from '@/features/stickers/components/sticker-panel'
-import { QAPanel } from '@/features/qa/components/qa-panel'
-import { useExplainSelection } from '@/features/stickers/hooks/use-explain-selection'
+import { QAPanel, type ExplainRequest } from '@/features/qa/components/qa-panel'
 import { useAutoExplainSession } from '@/features/reader/hooks/use-auto-explain-session'
 import { ImageExtractionToast } from '@/features/reader/components/image-extraction-toast'
 import { HoverHighlightProvider } from '@/features/stickers/context'
 import type { PdfType } from '@/features/stickers/api'
-import { debugLog } from '@/lib/debug'
 import { useExplainLocale } from '@/features/user/hooks/use-user-preferences'
 
 export default function StudyPage() {
@@ -30,39 +28,10 @@ export default function StudyPage() {
     error: fileError,
     pdfSource,
     isCached,
-    cacheStatus,
   } = useCachedFile(courseId, fileId)
   const explainLocale = useExplainLocale()
 
   const isLoading = courseLoading || fileLoading
-
-  // ==================== DEBUG: StudyPage Lifecycle ====================
-  useEffect(() => {
-    debugLog('[StudyPage DEBUG] Component MOUNTED', {
-      courseId,
-      fileId,
-    })
-    return () => {
-      debugLog('[StudyPage DEBUG] Component UNMOUNTING', {
-        courseId,
-        fileId,
-        hasSelectedRegions,
-        selectedRegionCount,
-      })
-    }
-  }, []) // Empty deps = mount/unmount only
-
-  // DEBUG: Track file data changes
-  useEffect(() => {
-    debugLog('[StudyPage DEBUG] file data changed', {
-      fileId,
-      hasFile: !!file,
-      downloadUrl: file?.downloadUrl ? 'exists' : 'missing',
-      isLoading: fileLoading,
-      cacheStatus,
-      isCached,
-    })
-  }, [file, fileId, fileLoading, cacheStatus, isCached])
 
   // Track current page for sticker panel
   const [currentPage, setCurrentPage] = useState(1)
@@ -72,7 +41,6 @@ export default function StudyPage() {
     session: autoExplainSession,
     isActive: isAutoExplainActive,
     isStarting: isAutoExplainStarting,
-    error: autoExplainError,
     startSession: startAutoExplainSession,
     updateWindow: updateAutoExplainWindow,
     cancelSession: cancelAutoExplainSession,
@@ -80,11 +48,10 @@ export default function StudyPage() {
 
   // Track selected image regions
   const [hasSelectedRegions, setHasSelectedRegions] = useState(false)
-  const [selectedRegionCount, setSelectedRegionCount] = useState(0)
   const [triggerImageExplanation, setTriggerImageExplanation] = useState(false)
 
-  // Explain selection hook for PDF text selection
-  const { explain: explainSelection } = useExplainSelection()
+  // Explain request state for Q&A panel
+  const [explainRequest, setExplainRequest] = useState<ExplainRequest | null>(null)
 
   // Handle page change from PDF viewer
   const handlePageChange = useCallback((page: number) => {
@@ -92,31 +59,49 @@ export default function StudyPage() {
   }, [])
 
   // Handle selected regions change
-  const handleSelectedRegionsChange = useCallback((hasRegions: boolean, regionCount: number) => {
+  const handleSelectedRegionsChange = useCallback((hasRegions: boolean, _regionCount: number) => {
     setHasSelectedRegions(hasRegions)
-    setSelectedRegionCount(regionCount)
   }, [])
 
-  // Handle text selection for AI explain
+  // Handle text selection for AI explain - now routes to Q&A
   const handleSelectionExplain = useCallback(
     (text: string, page: number, _rect: DOMRect | null) => {
       if (!file) return
 
-      explainSelection({
-        courseId,
-        fileId,
-        page,
+      // Set explain request for Q&A panel
+      setExplainRequest({
         selectedText: text,
-        parentId: null,
-        pdfType: file.type as PdfType,
-        locale: explainLocale,
+        page,
       })
     },
-    [courseId, fileId, file, explainSelection, explainLocale]
+    [file]
   )
 
-  // Handle start auto-explain session
-  const handleStartAutoExplain = useCallback(async () => {
+  // Handle sticker text selection explain - routes to Q&A
+  const handleStickerExplain = useCallback(
+    (selectedText: string, parentContext?: string) => {
+      setExplainRequest({
+        selectedText,
+        page: currentPage,
+        parentContext,
+      })
+    },
+    [currentPage]
+  )
+
+  // Handle explain complete
+  const handleExplainComplete = useCallback(() => {
+    setExplainRequest(null)
+  }, [])
+
+  // Handle toggle auto-explain mode (start or cancel)
+  const handleToggleAutoExplain = useCallback(async () => {
+    // If active, cancel the session
+    if (isAutoExplainActive) {
+      await cancelAutoExplainSession()
+      return
+    }
+
     // If there are selected image regions, trigger image explanation instead
     if (hasSelectedRegions) {
       setTriggerImageExplanation(true)
@@ -125,10 +110,9 @@ export default function StudyPage() {
       return
     }
 
-    // Otherwise, start window mode auto-explain session
     // Prevent duplicate session start
-    if (isAutoExplainActive || isAutoExplainStarting) {
-      console.warn('Auto-explain session already active or starting')
+    if (isAutoExplainStarting) {
+      console.warn('Auto-explain session already starting')
       return
     }
 
@@ -141,7 +125,7 @@ export default function StudyPage() {
       pdfType: file.type as PdfType,
       locale: explainLocale,
     })
-  }, [hasSelectedRegions, startAutoExplainSession, courseId, fileId, currentPage, file, isAutoExplainActive, isAutoExplainStarting, explainLocale])
+  }, [isAutoExplainActive, cancelAutoExplainSession, hasSelectedRegions, isAutoExplainStarting, startAutoExplainSession, courseId, fileId, currentPage, file, explainLocale])
 
   // Loading state
   if (isLoading) {
@@ -295,13 +279,11 @@ export default function StudyPage() {
                 pdfType={file.type as PdfType}
                 isScanned={file.isScanned}
                 totalPages={file.pageCount}
-                onStartAutoExplain={handleStartAutoExplain}
+                onToggleAutoExplain={handleToggleAutoExplain}
                 isAutoExplainActive={isAutoExplainActive}
                 isAutoExplainStarting={isAutoExplainStarting}
-                autoExplainProgress={autoExplainSession?.progress}
-                autoExplainWindowRange={autoExplainSession?.windowRange}
-                autoExplainError={autoExplainError}
                 isCurrentPageProcessing={autoExplainSession?.pagesInProgress?.includes(currentPage) ?? false}
+                onExplainToQA={handleStickerExplain}
               />
             }
             qaPanel={
@@ -312,6 +294,9 @@ export default function StudyPage() {
                 isScanned={file.isScanned}
                 totalPages={file.pageCount}
                 currentPage={currentPage}
+                explainRequest={explainRequest}
+                onExplainComplete={handleExplainComplete}
+                locale={explainLocale}
               />
             }
           />

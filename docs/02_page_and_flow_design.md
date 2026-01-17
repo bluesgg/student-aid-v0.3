@@ -252,14 +252,29 @@ used, limit, reset_at  // 基于注册日期每月重置
 
 **当前页跟踪**: Page模式显示单页;Scroll模式视口最大可见面积页
 
+**键盘导航(仅Page模式)**:
+
+| 按键 | 功能 |
+|-----|------|
+| → / ↓ | 下一页 |
+| ← / ↑ | 上一页 |
+
+* 在输入框中按键不触发页面切换
+* Scroll模式保持原生键盘滚动行为
+
 **集成**: 模式切换保存localStorage,URL支持`?mode=scroll`参数,贴纸交互/AI功能两种模式通用
+
+**Scroll模式功能对等**(2026-01-17实现):
+* 图片检测叠加层(ImageDetectionOverlay)仅在可见页面渲染
+* 延迟提取加载指示器(LazyExtractionLoading)按页显示
+* 贴纸锚点高亮(StickerAnchorHighlight)支持双向悬停:Sticker→PDF和PDF→Sticker
+* 页面点击反馈和Mark Mode弹窗在所有可见页面工作
 
 #### 图片点击解释
 
 **自动检测**:
 * PDF上传时自动提取图片位置(≤50页全提取,>50页前50页+延迟提取剩余)
 * 悬停PDF页面 → 显示已识别图片高亮边框+序号徽章
-* 点击已识别图片 → 触发AI解释生成贴纸
 
 **手动标记模式**:
 * 工具栏"Mark Image"按钮 → 光标变十字

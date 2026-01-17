@@ -37,21 +37,19 @@ export function LoginForm({ defaultError }: LoginFormProps) {
     resendConfirmation.mutate({ email: resendEmail })
   }
 
-  const getErrorMessage = () => {
-    if (defaultError === 'verification_failed') {
-      return 'Email verification failed or link expired. Please try again.'
-    }
-    if (defaultError === 'session_expired') {
-      return 'Your session has expired. Please sign in again.'
-    }
-    if (defaultError === 'link_expired') {
-      return 'The verification link has expired. Please request a new one.'
+  const ERROR_MESSAGES: Record<string, string> = {
+    verification_failed: 'Email verification failed or link expired. Please try again.',
+    session_expired: 'Your session has expired. Please sign in again.',
+    link_expired: 'The verification link has expired. Please request a new one.',
+  }
+
+  function getErrorMessage(): string | null {
+    if (defaultError && ERROR_MESSAGES[defaultError]) {
+      return ERROR_MESSAGES[defaultError]
     }
     if (login.error) {
-      if (login.error instanceof ApiClientError && login.error.code === 'EMAIL_NOT_CONFIRMED') {
-        return 'Please verify your email before logging in.'
-      }
-      return login.error.message
+      const isEmailNotConfirmed = login.error instanceof ApiClientError && login.error.code === 'EMAIL_NOT_CONFIRMED'
+      return isEmailNotConfirmed ? 'Please verify your email before logging in.' : login.error.message
     }
     return null
   }

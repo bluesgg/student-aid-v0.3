@@ -13,6 +13,19 @@ export interface QAInteraction {
   answerMarkdown: string
   references: Array<{ page: number; type: string }>
   createdAt: string
+  interactionType: 'question' | 'explain'
+  sourcePage: number | null
+  selectedText: string | null
+}
+
+export interface ExplainSelectionParams {
+  courseId: string
+  fileId: string
+  page: number
+  selectedText: string
+  pdfType: PdfType
+  locale?: string
+  parentContext?: string
 }
 
 export interface Summary {
@@ -39,11 +52,60 @@ export interface SummaryResponse {
 
 export type PdfType = 'Lecture' | 'Homework' | 'Exam' | 'Other'
 
+interface StreamingSummaryCallbacks {
+  onChunk?: (chunk: string) => void
+  onComplete?: (summary: SummaryResponse) => void
+}
+
+interface SummaryDefaults {
+  type: 'document' | 'section'
+  pageRangeStart: number | null
+  pageRangeEnd: number | null
+}
+
+async function handleSummaryResponse(
+  response: Response,
+  callbacks: StreamingSummaryCallbacks,
+  defaults: SummaryDefaults
+): Promise<SummaryResponse | void> {
+  const contentType = response.headers.get('Content-Type')
+  if (contentType?.includes('application/json')) {
+    const data = await response.json()
+    if (data.data?.cached) {
+      return data.data as SummaryResponse
+    }
+  }
+
+  const summaryId = response.headers.get('X-Summary-Id')
+  const summaryType = response.headers.get('X-Summary-Type') as 'document' | 'section'
+  let fullContent = ''
+
+  for await (const chunk of parseSSEStream(response)) {
+    if (chunk.error) {
+      throw new Error(chunk.error)
+    }
+    if (chunk.content) {
+      fullContent += chunk.content
+      callbacks.onChunk?.(chunk.content)
+    }
+    if (chunk.done) {
+      const summaryResponse: SummaryResponse = {
+        id: summaryId || '',
+        type: summaryType || defaults.type,
+        content: fullContent,
+        pageRangeStart: defaults.pageRangeStart,
+        pageRangeEnd: defaults.pageRangeEnd,
+        cached: false,
+        createdAt: new Date().toISOString(),
+      }
+      callbacks.onComplete?.(summaryResponse)
+      break
+    }
+  }
+}
+
 // Q&A API Functions
 
-/**
- * Ask a question about a PDF with streaming response
- */
 export async function askQuestion(
   params: {
     courseId: string
@@ -67,7 +129,6 @@ export async function askQuestion(
 
   const qaId = response.headers.get('X-QA-Id')
 
-  // Parse SSE stream
   for await (const chunk of parseSSEStream(response)) {
     if (chunk.error) {
       throw new Error(chunk.error)
@@ -82,9 +143,6 @@ export async function askQuestion(
   }
 }
 
-/**
- * Get Q&A history for a file
- */
 export async function getQAHistory(fileId: string): Promise<{ items: QAInteraction[] }> {
   const result = await get<{ items: QAInteraction[] }>(
     `/api/ai/qa?fileId=${fileId}`
@@ -97,11 +155,43 @@ export async function getQAHistory(fileId: string): Promise<{ items: QAInteracti
   return result.data
 }
 
+/**
+ * Explain selected text and save to Q&A history
+ */
+export async function explainSelection(
+  params: ExplainSelectionParams,
+  onChunk: (chunk: string) => void,
+  onComplete: (qaId: string | null) => void
+): Promise<void> {
+  const response = await fetch('/api/ai/qa-explain', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  })
+
+  if (!response.ok) {
+    const error = await response.json()
+    throw new Error(error.error?.message || 'Failed to explain selection')
+  }
+
+  const qaId = response.headers.get('X-QA-Id')
+
+  for await (const chunk of parseSSEStream(response)) {
+    if (chunk.error) {
+      throw new Error(chunk.error)
+    }
+    if (chunk.content) {
+      onChunk(chunk.content)
+    }
+    if (chunk.done) {
+      onComplete(qaId)
+      break
+    }
+  }
+}
+
 // Summary API Functions
 
-/**
- * Generate or retrieve a document summary
- */
 export async function getDocumentSummary(
   params: {
     courseId: string
@@ -122,47 +212,13 @@ export async function getDocumentSummary(
     throw new Error(error.error?.message || 'Failed to generate summary')
   }
 
-  // Check if it's a cached response (non-streaming)
-  const contentType = response.headers.get('Content-Type')
-  if (contentType?.includes('application/json')) {
-    const data = await response.json()
-    if (data.data?.cached) {
-      return data.data as SummaryResponse
-    }
-  }
-
-  // Handle streaming response
-  const summaryId = response.headers.get('X-Summary-Id')
-  const summaryType = response.headers.get('X-Summary-Type') as 'document' | 'section'
-  let fullContent = ''
-
-  for await (const chunk of parseSSEStream(response)) {
-    if (chunk.error) {
-      throw new Error(chunk.error)
-    }
-    if (chunk.content) {
-      fullContent += chunk.content
-      onChunk?.(chunk.content)
-    }
-    if (chunk.done) {
-      const summaryResponse: SummaryResponse = {
-        id: summaryId || '',
-        type: summaryType || 'document',
-        content: fullContent,
-        pageRangeStart: null,
-        pageRangeEnd: null,
-        cached: false,
-        createdAt: new Date().toISOString(),
-      }
-      onComplete?.(summaryResponse)
-      break
-    }
-  }
+  return handleSummaryResponse(
+    response,
+    { onChunk, onComplete },
+    { type: 'document', pageRangeStart: null, pageRangeEnd: null }
+  )
 }
 
-/**
- * Generate or retrieve a section summary
- */
 export async function getSectionSummary(
   params: {
     courseId: string
@@ -185,42 +241,11 @@ export async function getSectionSummary(
     throw new Error(error.error?.message || 'Failed to generate section summary')
   }
 
-  // Check if it's a cached response
-  const contentType = response.headers.get('Content-Type')
-  if (contentType?.includes('application/json')) {
-    const data = await response.json()
-    if (data.data?.cached) {
-      return data.data as SummaryResponse
-    }
-  }
-
-  // Handle streaming response
-  const summaryId = response.headers.get('X-Summary-Id')
-  const summaryType = response.headers.get('X-Summary-Type') as 'document' | 'section'
-  let fullContent = ''
-
-  for await (const chunk of parseSSEStream(response)) {
-    if (chunk.error) {
-      throw new Error(chunk.error)
-    }
-    if (chunk.content) {
-      fullContent += chunk.content
-      onChunk?.(chunk.content)
-    }
-    if (chunk.done) {
-      const summaryResponse: SummaryResponse = {
-        id: summaryId || '',
-        type: summaryType || 'section',
-        content: fullContent,
-        pageRangeStart: params.startPage,
-        pageRangeEnd: params.endPage,
-        cached: false,
-        createdAt: new Date().toISOString(),
-      }
-      onComplete?.(summaryResponse)
-      break
-    }
-  }
+  return handleSummaryResponse(
+    response,
+    { onChunk, onComplete },
+    { type: 'section', pageRangeStart: params.startPage, pageRangeEnd: params.endPage }
+  )
 }
 
 /**

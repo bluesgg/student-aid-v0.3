@@ -109,18 +109,14 @@ function StickerCardComponent({
   const isAutoSticker = sticker.type === 'auto'
   const isFullPageSticker = sticker.anchor.isFullPage === true
 
-  // Build border and background classes based on highlight state
+  // Determine border styling based on state and sticker type
   const borderClass = highlighted
     ? 'border-2 border-blue-500'
     : isAutoSticker
       ? 'border border-blue-200'
       : 'border border-purple-200'
 
-  const bgClass = highlighted
-    ? 'bg-blue-50/50'
-    : 'bg-white'
-
-  // Animation class for auto stickers (same as StreamingSticker)
+  const bgClass = highlighted ? 'bg-blue-50/50' : 'bg-white'
   const animationClass = isAutoSticker ? 'animate-in fade-in slide-in-from-top-2' : ''
 
   return (

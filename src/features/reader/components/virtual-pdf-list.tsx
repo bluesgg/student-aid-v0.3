@@ -11,7 +11,6 @@ import {
   CSSProperties,
 } from 'react'
 import { VariableSizeList } from 'react-window'
-import { Page } from 'react-pdf'
 import {
   PAGE_GAP_PX,
   PAGE_PADDING_PX,
@@ -23,7 +22,10 @@ import {
 } from '@/lib/reader/types'
 import { PdfPage } from './pdf-page'
 import { PdfRegionOverlay, type Region } from './pdf-region-overlay'
+import { ImageDetectionOverlay, LazyExtractionLoading } from './image-detection-overlay'
+import { StickerAnchorHighlight } from './sticker-anchor-highlight'
 import type { NormalizedRect } from '@/lib/stickers/selection-hash'
+import type { DetectedImageRect } from '../hooks/use-image-detection'
 
 // Threshold for using virtual scrolling - kept for backward compatibility export
 export const VIRTUAL_SCROLL_THRESHOLD = 50
@@ -63,6 +65,28 @@ export interface VirtualPdfListProps {
   drawingPage?: number | null
   /** Ref to store page dimensions */
   pageDimensionsRef?: React.MutableRefObject<Map<number, { width: number; height: number }>>
+  // ==================== Auto Image Detection Props (Task 1.1) ====================
+  /** Whether auto image detection is enabled */
+  isAutoImageDetectionEnabled?: boolean
+  /** Detected images by page number */
+  detectedImagesByPage?: Map<number, DetectedImageRect[]>
+  /** Show highlight feedback (flash all images) */
+  showHighlightFeedback?: boolean
+  /** Pages currently loading images */
+  loadingPages?: Set<number>
+  // ==================== Sticker Anchor Highlighting Props (Task 1.2) ====================
+  /** Hovered sticker rect for anchor highlighting */
+  hoveredStickerRect?: { x: number; y: number; width: number; height: number } | null
+  /** Page number of the hovered sticker anchor */
+  hoveredStickerPage?: number | null
+  // ==================== Page Area Click Props (Task 1.3) ====================
+  /** Handler for page area click (for mark mode and highlight feedback) */
+  onPageAreaClick?: (page: number, e: React.MouseEvent) => void
+  // ==================== Sticker Hit Test Props (Task 1.4) ====================
+  /** Handler for mouse move to detect sticker anchor hover (PDF→Sticker direction) */
+  onStickerHitTestMove?: (e: React.MouseEvent<HTMLElement>, pageElement: HTMLElement, page: number) => void
+  /** Handler for mouse leave to clear sticker anchor hover */
+  onStickerHitTestLeave?: () => void
 }
 
 /** Handle exposed via ref */
@@ -88,6 +112,19 @@ interface PageRowData {
   pageDimensionsRef?: React.MutableRefObject<Map<number, { width: number; height: number }>>
   pageObserverRef: React.MutableRefObject<IntersectionObserver | null>
   pageRefs: React.MutableRefObject<Map<number, HTMLDivElement>>
+  // Auto Image Detection
+  isAutoImageDetectionEnabled: boolean
+  detectedImagesByPage: Map<number, DetectedImageRect[]>
+  showHighlightFeedback: boolean
+  loadingPages: Set<number>
+  // Sticker Anchor Highlighting
+  hoveredStickerRect: { x: number; y: number; width: number; height: number } | null
+  hoveredStickerPage: number | null
+  // Page Area Click
+  onPageAreaClick?: (page: number, e: React.MouseEvent) => void
+  // Sticker Hit Test
+  onStickerHitTestMove?: (e: React.MouseEvent<HTMLElement>, pageElement: HTMLElement, page: number) => void
+  onStickerHitTestLeave?: () => void
 }
 
 interface PageRowProps {
@@ -116,9 +153,20 @@ const PageRow = memo(function PageRow({ index, style, data }: PageRowProps) {
     pageDimensionsRef,
     pageObserverRef,
     pageRefs,
+    // New props for scroll mode feature parity
+    isAutoImageDetectionEnabled,
+    detectedImagesByPage,
+    showHighlightFeedback,
+    loadingPages,
+    hoveredStickerRect,
+    hoveredStickerPage,
+    onPageAreaClick,
+    onStickerHitTestMove,
+    onStickerHitTestLeave,
   } = data
 
   const pageRef = useRef<HTMLDivElement>(null)
+  const pageContentRef = useRef<HTMLDivElement>(null)
   const [pageDimensions, setPageDimensions] = useState<{ width: number; height: number } | null>(null)
 
   // Register page element with IntersectionObserver
@@ -160,11 +208,23 @@ const PageRow = memo(function PageRow({ index, style, data }: PageRowProps) {
 
   // Filter regions for this page
   const pageRegions = regions.filter(r => r.page === pageNumber)
-  const showOverlay = visiblePages.has(pageNumber) && (
+  const showRegionOverlay = visiblePages.has(pageNumber) && (
     selectionMode ||
     pageRegions.length > 0 ||
     highlightedRegionIds.some(id => pageRegions.some(r => r.id === id))
   )
+
+  // Get detected images for this page (Task 2.1)
+  const pageDetectedImages = detectedImagesByPage.get(pageNumber) || []
+  const isPageVisible = visiblePages.has(pageNumber)
+  const showImageOverlay = isAutoImageDetectionEnabled && !selectionMode && isPageVisible && pageDetectedImages.length > 0
+
+  // Check if this page is loading images (Task 2.2)
+  const isLoadingImagesForPage = loadingPages.has(pageNumber)
+  const showLoadingIndicator = isAutoImageDetectionEnabled && !selectionMode && isPageVisible && isLoadingImagesForPage
+
+  // Check if sticker anchor should be highlighted on this page (Task 2.3)
+  const showStickerAnchor = hoveredStickerRect && hoveredStickerPage === pageNumber && isPageVisible
 
   return (
     <div
@@ -174,8 +234,12 @@ const PageRow = memo(function PageRow({ index, style, data }: PageRowProps) {
       data-page-container={pageNumber}
     >
       <div
+        ref={pageContentRef}
         className="relative shadow-lg"
         onPointerDown={selectionMode && onPointerDown ? (e) => onPointerDown(e, pageNumber) : undefined}
+        onClick={onPageAreaClick ? (e) => onPageAreaClick(pageNumber, e) : undefined}
+        onMouseMove={onStickerHitTestMove && pageContentRef.current ? (e) => onStickerHitTestMove(e, pageContentRef.current!, pageNumber) : undefined}
+        onMouseLeave={onStickerHitTestLeave}
       >
         <PdfPage
           pageNumber={pageNumber}
@@ -186,7 +250,7 @@ const PageRow = memo(function PageRow({ index, style, data }: PageRowProps) {
           onPageRender={onPageRender}
         />
         {/* Region Overlay - only render for visible pages with regions or in selection mode */}
-        {showOverlay && pageDimensions && onDeleteRegion && (
+        {showRegionOverlay && pageDimensions && onDeleteRegion && (
           <PdfRegionOverlay
             regions={pageRegions}
             currentPage={pageNumber}
@@ -196,6 +260,30 @@ const PageRow = memo(function PageRow({ index, style, data }: PageRowProps) {
             onDeleteRegion={onDeleteRegion}
             isSelectionMode={selectionMode}
             drawingRect={drawingPage === pageNumber ? drawingRect : null}
+          />
+        )}
+        {/* Auto Image Detection Overlay - Task 2.1 */}
+        {showImageOverlay && pageDimensions && (
+          <ImageDetectionOverlay
+            images={pageDetectedImages}
+            pageWidth={pageDimensions.width}
+            pageHeight={pageDimensions.height}
+            showHighlightFeedback={showHighlightFeedback}
+          />
+        )}
+        {/* Lazy Extraction Loading Indicator - Task 2.2 */}
+        {showLoadingIndicator && pageDimensions && (
+          <LazyExtractionLoading
+            pageWidth={pageDimensions.width}
+            pageHeight={pageDimensions.height}
+          />
+        )}
+        {/* Sticker Anchor Highlight - Task 2.3 */}
+        {showStickerAnchor && pageDimensions && hoveredStickerRect && (
+          <StickerAnchorHighlight
+            rect={hoveredStickerRect}
+            pageWidth={pageDimensions.width}
+            pageHeight={pageDimensions.height}
           />
         )}
       </div>
@@ -226,6 +314,16 @@ export const VirtualPdfList = forwardRef<VirtualPdfListHandle, VirtualPdfListPro
       drawingRect = null,
       drawingPage = null,
       pageDimensionsRef,
+      // New props for scroll mode feature parity (Task 3)
+      isAutoImageDetectionEnabled = false,
+      detectedImagesByPage = new Map(),
+      showHighlightFeedback = false,
+      loadingPages = new Set(),
+      hoveredStickerRect = null,
+      hoveredStickerPage = null,
+      onPageAreaClick,
+      onStickerHitTestMove,
+      onStickerHitTestLeave,
     },
     ref
   ) {
@@ -464,6 +562,16 @@ export const VirtualPdfList = forwardRef<VirtualPdfListHandle, VirtualPdfListPro
       pageDimensionsRef,
       pageObserverRef,
       pageRefs,
+      // New props for scroll mode feature parity
+      isAutoImageDetectionEnabled,
+      detectedImagesByPage,
+      showHighlightFeedback,
+      loadingPages,
+      hoveredStickerRect,
+      hoveredStickerPage,
+      onPageAreaClick,
+      onStickerHitTestMove,
+      onStickerHitTestLeave,
     }
 
     const listHeight = containerHeight || (typeof window !== 'undefined' ? window.innerHeight - 120 : 800)

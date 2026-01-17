@@ -7,6 +7,7 @@
  */
 
 import { useState, useCallback, useEffect, useRef } from 'react'
+import { useTranslations } from 'next-intl'
 import type { DetectedImageRect } from '../hooks/use-image-detection'
 
 // ==================== Types ====================
@@ -20,18 +21,36 @@ export interface ImageDetectionOverlayProps {
   pageHeight: number
   /** Show highlight feedback (highlights all images briefly) */
   showHighlightFeedback: boolean
+  /** Callback when delete button is clicked for a manual image */
+  onDeleteImage?: (imageId: string) => void
+  /** Whether an image is currently being deleted */
+  isDeletingImage?: boolean
 }
 
 // ==================== Styles ====================
 
 const HIGHLIGHT_COLORS = {
-  hover: {
-    border: 'border-blue-500',
-    bg: 'bg-blue-500/10',
+  // Auto-detected images (ops) - blue
+  auto: {
+    hover: {
+      border: 'border-blue-500',
+      bg: 'bg-blue-500/10',
+    },
+    feedback: {
+      border: 'border-blue-500 border-dashed',
+      bg: 'bg-blue-500/15',
+    },
   },
-  feedback: {
-    border: 'border-blue-500 border-dashed',
-    bg: 'bg-blue-500/15',
+  // Manually-detected images - green (distinguishable from auto)
+  manual: {
+    hover: {
+      border: 'border-emerald-500',
+      bg: 'bg-emerald-500/10',
+    },
+    feedback: {
+      border: 'border-emerald-500 border-dashed',
+      bg: 'bg-emerald-500/15',
+    },
   },
 }
 
@@ -42,7 +61,10 @@ export function ImageDetectionOverlay({
   pageWidth,
   pageHeight,
   showHighlightFeedback,
+  onDeleteImage,
+  isDeletingImage,
 }: ImageDetectionOverlayProps) {
+  const t = useTranslations('reader.imageDetection')
   const [hoveredImageId, setHoveredImageId] = useState<string | null>(null)
 
   const handleMouseEnter = useCallback((imageId: string) => {
@@ -52,6 +74,13 @@ export function ImageDetectionOverlay({
   const handleMouseLeave = useCallback(() => {
     setHoveredImageId(null)
   }, [])
+
+  const handleDeleteClick = useCallback((e: React.MouseEvent, imageId: string) => {
+    e.stopPropagation() // Prevent triggering page click handlers
+    if (onDeleteImage && !isDeletingImage) {
+      onDeleteImage(imageId)
+    }
+  }, [onDeleteImage, isDeletingImage])
 
   if (images.length === 0) {
     return null
@@ -65,9 +94,11 @@ export function ImageDetectionOverlay({
       {images.map((image) => {
         const isHovered = hoveredImageId === image.id
         const showHighlight = isHovered || showHighlightFeedback
+        const isManual = image.detectionMethod === 'manual'
 
-        // Determine colors based on state
-        const colors = showHighlightFeedback ? HIGHLIGHT_COLORS.feedback : HIGHLIGHT_COLORS.hover
+        // Determine colors based on detection method and state
+        const colorSet = isManual ? HIGHLIGHT_COLORS.manual : HIGHLIGHT_COLORS.auto
+        const colors = showHighlightFeedback ? colorSet.feedback : colorSet.hover
 
         // Convert normalized rect to percentage coordinates
         const style = {
@@ -76,6 +107,9 @@ export function ImageDetectionOverlay({
           width: `${image.rect.width * 100}%`,
           height: `${image.rect.height * 100}%`,
         }
+
+        // Badge color based on detection method
+        const badgeBgColor = isManual ? 'bg-emerald-600' : 'bg-blue-600'
 
         return (
           <div
@@ -86,13 +120,35 @@ export function ImageDetectionOverlay({
             style={style}
             data-image-id={image.id}
             data-image-index={image.imageIndex}
+            data-detection-method={image.detectionMethod}
             onMouseEnter={() => handleMouseEnter(image.id)}
             onMouseLeave={handleMouseLeave}
           >
-            {/* Image index indicator (only on hover) */}
+            {/* Image info indicator (only on hover) */}
             {isHovered && !showHighlightFeedback && (
-              <div className="absolute -bottom-1 -right-1 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-medium text-white shadow">
-                {image.imageIndex + 1}
+              <div className="absolute -bottom-1 -right-1 flex items-center gap-1">
+                {/* Delete button for manual images */}
+                {isManual && onDeleteImage && (
+                  <button
+                    onClick={(e) => handleDeleteClick(e, image.id)}
+                    disabled={isDeletingImage}
+                    className="rounded bg-red-600 p-1 text-white shadow transition-colors hover:bg-red-700 disabled:opacity-50"
+                    title={t('deleteManualImage')}
+                  >
+                    <svg className="h-3 w-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                      />
+                    </svg>
+                  </button>
+                )}
+                {/* Index badge */}
+                <div className={`rounded ${badgeBgColor} px-1.5 py-0.5 text-[10px] font-medium text-white shadow`}>
+                  {isManual ? t('manualBadge') : image.imageIndex + 1}
+                </div>
               </div>
             )}
           </div>
@@ -119,6 +175,8 @@ export function ExtractionStatusIndicator({
   progress,
   totalPages,
 }: ExtractionStatusIndicatorProps) {
+  const t = useTranslations('reader.imageDetection')
+
   if (status === 'complete' || status === 'pending') {
     return null
   }
@@ -134,7 +192,7 @@ export function ExtractionStatusIndicator({
             d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
           />
         </svg>
-        <span>Image detection failed</span>
+        <span>{t('failed')}</span>
       </div>
     )
   }
@@ -152,7 +210,7 @@ export function ExtractionStatusIndicator({
         />
       </svg>
       <span>
-        Images: {progress}/{totalPages} pages
+        {t('progress', { current: progress, total: totalPages })}
       </span>
     </div>
   )
@@ -175,6 +233,8 @@ export function LazyExtractionLoading({
   pageWidth,
   pageHeight,
 }: LazyExtractionLoadingProps) {
+  const t = useTranslations('reader.imageDetection')
+
   return (
     <div
       className="pointer-events-none absolute inset-0 flex items-start justify-center pt-4"
@@ -195,7 +255,7 @@ export function LazyExtractionLoading({
             d="M12 2a10 10 0 0110 10"
           />
         </svg>
-        <span className="text-xs text-muted-foreground">Detecting images...</span>
+        <span className="text-xs text-muted-foreground">{t('detecting')}</span>
       </div>
     </div>
   )

@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { type AutoExplainSession } from '../hooks/use-auto-explain-session'
 
 interface SessionProgressToastProps {
@@ -18,6 +19,7 @@ export function SessionProgressToast({
   onCancel,
   isActive,
 }: SessionProgressToastProps) {
+  const t = useTranslations('reader.session')
   const [isVisible, setIsVisible] = useState(false)
   const [isDismissing, setIsDismissing] = useState(false)
 
@@ -71,17 +73,17 @@ export function SessionProgressToast({
             )}
             <span className="text-sm font-medium text-gray-900">
               {isCompleted
-                ? 'Generation complete'
+                ? t('complete')
                 : isCanceled
-                ? 'Canceled'
-                : 'Generating explanations...'}
+                ? t('canceled')
+                : t('generating')}
             </span>
           </div>
           {!isCompleted && !isCanceled && (
             <button
               onClick={onCancel}
               className="text-gray-400 hover:text-gray-600 transition-colors"
-              title="Stop generation"
+              title={t('stop')}
             >
               <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -109,10 +111,10 @@ export function SessionProgressToast({
           {/* Stats */}
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span>
-              Pages {windowRange.start}-{windowRange.end}
+              {t('pageRange', { start: windowRange.start, end: windowRange.end })}
             </span>
             <span>
-              {progress.completed}/{progress.total} completed
+              {t('progress', { completed: progress.completed, total: progress.total })}
             </span>
           </div>
 
@@ -121,12 +123,12 @@ export function SessionProgressToast({
             <div className="flex items-center gap-3 text-xs">
               {progress.inProgress > 0 && (
                 <span className="text-blue-600">
-                  {progress.inProgress} in progress
+                  {t('inProgress', { count: progress.inProgress })}
                 </span>
               )}
               {progress.failed > 0 && (
                 <span className="text-red-500">
-                  {progress.failed} failed
+                  {t('failed', { count: progress.failed })}
                 </span>
               )}
             </div>

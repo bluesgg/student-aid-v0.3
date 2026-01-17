@@ -1,61 +1,30 @@
-/**
- * Academic term utilities for generating term options and determining current term
- */
-
 export interface TermOption {
   label: string
   value: string
 }
 
-/**
- * Get the current academic term based on the current date
- * Logic:
- * - January-April: Winter
- * - May-August: Spring
- * - September-December: Fall
- */
-export function getCurrentTerm(): string {
-  const now = new Date()
-  const month = now.getMonth() + 1 // getMonth() returns 0-11
-  const year = now.getFullYear()
+const SEASONS = ['Winter', 'Spring', 'Fall'] as const
 
-  let season: string
-
-  if (month >= 1 && month <= 4) {
-    season = 'Winter'
-  } else if (month >= 5 && month <= 8) {
-    season = 'Spring'
-  } else {
-    // September-December
-    season = 'Fall'
-  }
-
-  return `${season} ${year}`
+// Maps month (1-12) to season index: Jan-Apr -> Winter(0), May-Aug -> Spring(1), Sep-Dec -> Fall(2)
+function getSeasonFromMonth(month: number): string {
+  return SEASONS[Math.floor((month - 1) / 4)]
 }
 
-/**
- * Generate term options for 3 years (previous, current, next)
- * Returns 9 options total (3 terms × 3 years)
- * Terms: Winter (Jan-Apr), Spring (May-Aug), Fall (Sep-Dec)
- * Ordered from earliest to latest
- */
-export function getTermOptions(): TermOption[] {
+export function getCurrentTerm(): string {
   const now = new Date()
-  const currentYear = now.getFullYear()
+  const month = now.getMonth() + 1
+  const year = now.getFullYear()
+  return `${getSeasonFromMonth(month)} ${year}`
+}
+
+export function getTermOptions(): TermOption[] {
+  const currentYear = new Date().getFullYear()
   const years = [currentYear - 1, currentYear, currentYear + 1]
-  const seasons = ['Winter', 'Spring', 'Fall']
 
-  const terms: TermOption[] = []
-
-  for (const year of years) {
-    for (const season of seasons) {
+  return years.flatMap((year) =>
+    SEASONS.map((season) => {
       const term = `${season} ${year}`
-      terms.push({
-        label: term,
-        value: term,
-      })
-    }
-  }
-
-  return terms
+      return { label: term, value: term }
+    })
+  )
 }

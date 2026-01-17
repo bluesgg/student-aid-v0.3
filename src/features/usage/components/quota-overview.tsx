@@ -14,36 +14,22 @@ interface QuotaOverviewProps {
   quotas: QuotaData[]
 }
 
-type BucketKey = 'autoExplain' | 'learningInteractions' | 'documentSummary' | 'sectionSummary' | 'courseSummary'
+function getUsagePercent(quota: QuotaData): number {
+  return quota.limit > 0 ? quota.used / quota.limit : 0
+}
 
 function QuotaOverviewComponent({ quotas }: QuotaOverviewProps) {
   const t = useTranslations('usage')
 
-  // Sort quotas by usage percentage (highest first)
-  const sortedQuotas = [...quotas].sort((a, b) => {
-    const percentA = a.limit > 0 ? a.used / a.limit : 0
-    const percentB = b.limit > 0 ? b.used / b.limit : 0
-    return percentB - percentA
-  })
-
+  const sortedQuotas = [...quotas].sort((a, b) => getUsagePercent(b) - getUsagePercent(a))
   const totalUsed = quotas.reduce((sum, q) => sum + q.used, 0)
   const totalLimit = quotas.reduce((sum, q) => sum + q.limit, 0)
 
-  const getBucketLabel = (bucket: string): string => {
-    const key = bucket as BucketKey
+  const getTranslation = (prefix: string, bucket: string): string | undefined => {
     try {
-      return t(`buckets.${key}`)
+      return t(`${prefix}.${bucket}`)
     } catch {
-      return bucket
-    }
-  }
-
-  const getBucketDescription = (bucket: string): string | undefined => {
-    const key = bucket as BucketKey
-    try {
-      return t(`bucketDescriptions.${key}`)
-    } catch {
-      return undefined
+      return prefix === 'buckets' ? bucket : undefined
     }
   }
 
@@ -60,8 +46,8 @@ function QuotaOverviewComponent({ quotas }: QuotaOverviewProps) {
 
       <div className="divide-y divide-gray-100">
         {sortedQuotas.map((quota) => {
-          const label = getBucketLabel(quota.bucket)
-          const description = getBucketDescription(quota.bucket)
+          const label = getTranslation('buckets', quota.bucket) || quota.bucket
+          const description = getTranslation('bucketDescriptions', quota.bucket)
 
           return (
             <div key={quota.bucket} className="p-4">

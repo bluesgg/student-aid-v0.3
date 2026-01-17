@@ -187,10 +187,63 @@
     "stickers": "Stickers",
     "qa": "Q&A",
     "markImage": "Mark Image",
+    "selectImages": "Select Images",
     "exitMarkMode": "Exit",
+    "exitSelection": "Exit Selection",
     "noImageDetected": "No image detected at this position",
     "drawManually": "Draw manually",
-    "markImageTooltip": "Click an image to explain, or draw rectangle for missed images"
+    "markImageTooltip": "Click an image to explain, or draw rectangle for missed images",
+    "scannedNotAvailable": "Not available for scanned PDFs",
+    "toolbar": {
+      "previousPage": "Previous page",
+      "nextPage": "Next page",
+      "zoomIn": "Zoom in",
+      "zoomOut": "Zoom out",
+      "generating": "Generating..."
+    },
+    "zoom": {
+      "fitWidth": "Fit Width",
+      "fitPage": "Fit Page",
+      "custom": "Custom",
+      "label": "Zoom"
+    },
+    "readerMode": {
+      "pageTitle": "Single page view",
+      "pageLabel": "Page",
+      "scrollTitle": "Continuous scroll view",
+      "scrollLabel": "Scroll"
+    },
+    "textSelection": {
+      "explain": "AI Explain",
+      "dismiss": "Dismiss"
+    },
+    "imageDetection": {
+      "failed": "Image detection failed",
+      "progress": "Images: {current}/{total} pages",
+      "detecting": "Detecting images...",
+      "deleteManualImage": "Delete this manually marked image",
+      "manualBadge": "Manual"
+    },
+    "imageExtraction": {
+      "complete": "Image detection complete",
+      "partial": "Image detection partially complete",
+      "detecting": "Detecting images...",
+      "pages": "{current}/{total} pages"
+    },
+    "session": {
+      "complete": "Generation complete",
+      "canceled": "Canceled",
+      "generating": "Generating explanations...",
+      "stop": "Stop generation",
+      "pageRange": "Pages {start}-{end}",
+      "progress": "{completed}/{total} completed",
+      "inProgress": "{count} in progress",
+      "failed": "{count} failed"
+    },
+    "errors": {
+      "fileNotFound": "File not found",
+      "loadFailed": "Failed to load PDF"
+    }
   },
   "pdf": {
     "loading": {

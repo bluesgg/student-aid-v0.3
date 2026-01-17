@@ -378,12 +378,13 @@ export async function getDetectedImages(
   id: string
   image_index: number
   rect: { x: number; y: number; width: number; height: number }
+  detection_method: 'ops' | 'manual'
 }>> {
   const supabase = createAdminClient()
 
   const { data, error } = await supabase
     .from('detected_images')
-    .select('id, image_index, rect')
+    .select('id, image_index, rect, detection_method')
     .eq('pdf_hash', pdfHash)
     .eq('page', page)
     .order('image_index', { ascending: true })

@@ -2,28 +2,28 @@
 
 ## 1. Backend: Point Detection API
 
-- [ ] 1.1 Create API endpoint `POST /api/courses/:courseId/files/:fileId/images/detect`
+- [x] 1.1 Create API endpoint `POST /api/courses/:courseId/files/:fileId/images/detect`
   - Input: `{ page: number, clickX: number, clickY: number }` (normalized 0-1 coordinates)
   - Logic: Download PDF page, run existing image extractor, find image containing click point
   - Output: `{ found: boolean, image?: { rect: NormalizedRect } }`
-- [ ] 1.2 If image found at click position, save to `detected_images` table with `detection_method='manual'`
-- [ ] 1.3 Return saved image data for frontend to update overlay
+- [x] 1.2 If image found at click position, save to `detected_images` table with `detection_method='manual'`
+- [x] 1.3 Return saved image data for frontend to update overlay
 
 ## 2. Frontend: Detection Hook
 
-- [ ] 2.1 Add `detectImageAtPosition(page, clickX, clickY)` function in `use-image-detection.ts`
-- [ ] 2.2 Function calls the detect API and returns result
+- [x] 2.1 Add `detectImageAtPosition(page, clickX, clickY)` function in `use-image-detection.ts`
+- [x] 2.2 Function calls the detect API and returns result
 
 ## 3. Frontend: Fix Mark Mode Click Handler
 
-- [ ] 3.1 Modify `handlePageAreaClick` in `pdf-viewer.tsx`:
+- [x] 3.1 Modify `handlePageAreaClick` in `pdf-viewer.tsx`:
   - Current: Show popup immediately
   - New: Call `detectImageAtPosition` first
-- [ ] 3.2 If detection succeeds:
+- [x] 3.2 If detection succeeds:
   - Invalidate detected images cache to refresh overlay
   - Show brief success feedback (e.g., flash the detected region)
   - Stay in mark mode for additional marking
-- [ ] 3.3 If detection fails:
+- [x] 3.3 If detection fails:
   - Show "No image detected" popup (current behavior)
   - User can click "Draw manually" to enter rectangle mode
 

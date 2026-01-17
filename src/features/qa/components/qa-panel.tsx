@@ -1,16 +1,22 @@
 'use client'
 
-import { memo, useState } from 'react'
+import { memo, useState, useEffect } from 'react'
 import { MarkdownRenderer } from '@/components/ui/markdown-renderer'
 import { useQA } from '../hooks/use-qa'
 import { useQAHistory } from '../hooks/use-qa-history'
 import { useSummarize, useSummaries } from '../hooks/use-summarize'
 import { QAInput } from './qa-input'
 import { QAHistory } from './qa-history'
-import { QACard } from './qa-card'
 import { SummaryButtons } from './summary-buttons'
 import { SummaryCard } from './summary-card'
-import type { PdfType, QAInteraction } from '../api'
+import { StreamingExplain } from './streaming-explain'
+import type { PdfType } from '../api'
+
+export interface ExplainRequest {
+  selectedText: string
+  page: number
+  parentContext?: string
+}
 
 interface QAPanelProps {
   courseId: string
@@ -20,9 +26,33 @@ interface QAPanelProps {
   totalPages: number
   currentPage?: number
   onPageClick?: (page: number) => void
+  explainRequest?: ExplainRequest | null
+  onExplainComplete?: () => void
+  locale?: string
 }
 
 type TabType = 'qa' | 'summary'
+
+interface TabButtonProps {
+  active: boolean
+  onClick: () => void
+  children: React.ReactNode
+}
+
+function TabButton({ active, onClick, children }: TabButtonProps) {
+  return (
+    <button
+      onClick={onClick}
+      className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+        active
+          ? 'border-blue-500 text-blue-600'
+          : 'border-transparent text-gray-500 hover:text-gray-700'
+      }`}
+    >
+      {children}
+    </button>
+  )
+}
 
 function QAPanelComponent({
   courseId,
@@ -32,14 +62,20 @@ function QAPanelComponent({
   totalPages,
   currentPage = 1,
   onPageClick,
+  explainRequest,
+  onExplainComplete,
+  locale,
 }: QAPanelProps) {
   const [activeTab, setActiveTab] = useState<TabType>('qa')
 
   // Q&A hooks
   const {
     askQuestion,
+    explainSelection,
     isLoading: qaLoading,
     streamingContent: qaStreaming,
+    streamingType,
+    streamingMeta,
     error: qaError,
     reset: resetQA,
   } = useQA({ courseId, fileId, pdfType })
@@ -57,6 +93,27 @@ function QAPanelComponent({
   } = useSummarize({ courseId, fileId, pdfType })
 
   const { data: summariesData } = useSummaries(fileId)
+
+  // Handle external explain requests
+  useEffect(() => {
+    if (explainRequest && !qaLoading) {
+      // Switch to Q&A tab
+      setActiveTab('qa')
+
+      // Reset and start explain
+      resetQA()
+      explainSelection({
+        selectedText: explainRequest.selectedText,
+        page: explainRequest.page,
+        parentContext: explainRequest.parentContext,
+        locale,
+      }).then(() => {
+        onExplainComplete?.()
+      }).catch(() => {
+        onExplainComplete?.()
+      })
+    }
+  }, [explainRequest, qaLoading, explainSelection, resetQA, onExplainComplete, locale])
 
   const handleAskQuestion = (question: string) => {
     resetQA()
@@ -91,26 +148,12 @@ function QAPanelComponent({
 
         {/* Tabs */}
         <div className="flex px-4 -mb-px">
-          <button
-            onClick={() => setActiveTab('qa')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'qa'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          <TabButton active={activeTab === 'qa'} onClick={() => setActiveTab('qa')}>
             Q&A
-          </button>
-          <button
-            onClick={() => setActiveTab('summary')}
-            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-              activeTab === 'summary'
-                ? 'border-blue-500 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
+          </TabButton>
+          <TabButton active={activeTab === 'summary'} onClick={() => setActiveTab('summary')}>
             Summary
-          </button>
+          </TabButton>
         </div>
       </div>
 
@@ -118,8 +161,17 @@ function QAPanelComponent({
       <div className="flex-1 overflow-y-auto p-4">
         {activeTab === 'qa' ? (
           <div className="space-y-4">
-            {/* Streaming Q&A response */}
-            {(qaLoading || qaStreaming) && (
+            {/* Streaming response - different UI for question vs explain */}
+            {(qaLoading || qaStreaming) && streamingType === 'explain' && streamingMeta && (
+              <StreamingExplain
+                selectedText={streamingMeta.selectedText}
+                content={qaStreaming}
+                isLoading={qaLoading}
+                sourcePage={streamingMeta.page}
+              />
+            )}
+
+            {(qaLoading || qaStreaming) && streamingType === 'question' && (
               <div className="rounded-lg border border-blue-200 bg-blue-50 p-4 animate-in fade-in">
                 <div className="flex items-start gap-3">
                   <div className="flex-shrink-0">

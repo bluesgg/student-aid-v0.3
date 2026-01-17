@@ -313,11 +313,17 @@ export async function extractPdfImages(
 /**
  * Extract images from a single page of a PDF.
  * Used for lazy extraction of pages >50.
+ *
+ * @param buffer - PDF file buffer
+ * @param pageNumber - Page number (1-indexed)
+ * @param pdfType - PDF type for filtering
+ * @param skipFiltering - If true, return all images without applying filter rules
  */
 export async function extractSinglePageImages(
   buffer: Buffer,
   pageNumber: number,
-  pdfType: 'ppt' | 'textbook'
+  pdfType: 'ppt' | 'textbook',
+  skipFiltering: boolean = false
 ): Promise<PageImageResult> {
   const pdfDoc = await loadPdfDocument(buffer)
 
@@ -331,7 +337,9 @@ export async function extractSinglePageImages(
     }
 
     const page = await pdfDoc.getPage(pageNumber)
-    const images = await extractImagesFromPage(page, pageNumber, pdfType)
+    const images = skipFiltering
+      ? await extractImagesFromPageUnfiltered(page, pageNumber)
+      : await extractImagesFromPage(page, pageNumber, pdfType)
 
     return {
       page: pageNumber,
@@ -340,6 +348,90 @@ export async function extractSinglePageImages(
     }
   } finally {
     await pdfDoc.destroy()
+  }
+}
+
+/**
+ * Extract all images from a page WITHOUT applying filter rules.
+ * Used for mark mode detection where user clicks on potentially filtered images.
+ */
+async function extractImagesFromPageUnfiltered(
+  page: PDFPageProxy,
+  pageNumber: number
+): Promise<DetectedImageRect[]> {
+  try {
+    const operatorList = await page.getOperatorList()
+
+    if (!operatorList || !operatorList.fnArray) {
+      console.warn('[ImageExtract] No operator list for page', pageNumber)
+      return []
+    }
+
+    const viewport = page.getViewport({ scale: 1 })
+    const { width: pageWidth, height: pageHeight } = viewport
+
+    const images: DetectedImageRect[] = []
+
+    // Current transformation matrix (CTM) - tracks coordinate transforms
+    const ctmStack: number[][] = [[1, 0, 0, 1, 0, 0]]
+
+    for (let i = 0; i < operatorList.fnArray.length; i++) {
+      const op = operatorList.fnArray[i]
+      const args = operatorList.argsArray[i]
+
+      // Handle transformation operations
+      if (op === 10) { // OPS.save
+        ctmStack.push([...ctmStack[ctmStack.length - 1]])
+      } else if (op === 11) { // OPS.restore
+        if (ctmStack.length > 1) ctmStack.pop()
+      } else if (op === 12) { // OPS.transform
+        const [a, b, c, d, e, f] = args as number[]
+        const current = ctmStack[ctmStack.length - 1]
+        ctmStack[ctmStack.length - 1] = [
+          current[0] * a + current[2] * b,
+          current[1] * a + current[3] * b,
+          current[0] * c + current[2] * d,
+          current[1] * c + current[3] * d,
+          current[0] * e + current[2] * f + current[4],
+          current[1] * e + current[3] * f + current[5],
+        ]
+      }
+
+      // Detect image painting operations (same as filtered version)
+      if (
+        op === OPS.paintImageXObject ||
+        op === OPS.paintImageXObjectRepeat ||
+        op === OPS.paintInlineImageXObject ||
+        op === OPS.paintInlineImageXObjectGroup
+      ) {
+        const ctm = ctmStack[ctmStack.length - 1]
+
+        const imgWidth = Math.abs(ctm[0])
+        const imgHeight = Math.abs(ctm[3])
+        const imgX = ctm[4]
+        const imgY = ctm[5]
+
+        // Normalize to 0-1 coordinates
+        const rect: DetectedImageRect = {
+          x: Math.max(0, Math.min(1, imgX / pageWidth)),
+          y: Math.max(0, Math.min(1, 1 - (imgY + imgHeight) / pageHeight)),
+          width: Math.max(0, Math.min(1, imgWidth / pageWidth)),
+          height: Math.max(0, Math.min(1, imgHeight / pageHeight)),
+        }
+
+        // NO filtering - add all images
+        images.push(rect)
+      }
+    }
+
+    console.log('[ImageExtract] Page', pageNumber, 'unfiltered results:', {
+      imagesFound: images.length,
+    })
+
+    return images
+  } catch (error) {
+    console.error('Error extracting images from page (unfiltered):', error)
+    return []
   }
 }
 

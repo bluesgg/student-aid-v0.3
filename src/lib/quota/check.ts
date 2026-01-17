@@ -1,10 +1,11 @@
-/**
- * Quota checking utilities.
- * Verifies quota availability before AI operations.
- */
-
 import { SupabaseClient } from '@supabase/supabase-js'
-import { QuotaBucket, QuotaInfo, DEFAULT_QUOTA_LIMITS } from './types'
+import {
+  QuotaBucket,
+  QuotaInfo,
+  DEFAULT_QUOTA_LIMITS,
+  ALL_QUOTA_BUCKETS,
+  calculateNextResetDate,
+} from './types'
 
 export interface QuotaCheckResult {
   allowed: boolean
@@ -12,10 +13,6 @@ export interface QuotaCheckResult {
   bucket: QuotaBucket
 }
 
-/**
- * Check if user has available quota for an operation.
- * Also handles on-demand quota reset if needed.
- */
 export async function checkQuota(
   supabase: SupabaseClient,
   userId: string,
@@ -98,20 +95,6 @@ export async function checkQuota(
   }
 }
 
-/**
- * Calculate next reset date (1 month from now, same day of month as registration).
- * For simplicity in MVP, we use a rolling 30-day period.
- */
-function calculateNextResetDate(from: Date): Date {
-  const resetDate = new Date(from)
-  resetDate.setMonth(resetDate.getMonth() + 1)
-  resetDate.setHours(0, 0, 0, 0)
-  return resetDate
-}
-
-/**
- * Create a new quota record for a user.
- */
 async function createQuotaRecord(
   supabase: SupabaseClient,
   userId: string,
@@ -154,9 +137,6 @@ async function createQuotaRecord(
   return data
 }
 
-/**
- * Get all quotas for a user.
- */
 export async function getUserQuotas(
   supabase: SupabaseClient,
   userId: string
@@ -181,18 +161,9 @@ export async function getUserQuotas(
     }
   }
 
-  // Fill in missing buckets with defaults
-  const allBuckets: QuotaBucket[] = [
-    'learningInteractions',
-    'documentSummary',
-    'sectionSummary',
-    'courseSummary',
-    'autoExplain',
-  ]
+  const defaultResetAt = calculateNextResetDate().toISOString()
 
-  const defaultResetAt = calculateNextResetDate(new Date()).toISOString()
-
-  for (const bucket of allBuckets) {
+  for (const bucket of ALL_QUOTA_BUCKETS) {
     if (!result[bucket]) {
       result[bucket] = {
         used: 0,

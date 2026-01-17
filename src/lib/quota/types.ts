@@ -1,7 +1,3 @@
-/**
- * Quota bucket types and configuration.
- */
-
 export type QuotaBucket =
   | 'learningInteractions'
   | 'documentSummary'
@@ -26,7 +22,6 @@ export interface QuotaRecord {
   updated_at: string
 }
 
-// Default quota limits
 export const DEFAULT_QUOTA_LIMITS: Record<QuotaBucket, number> = {
   learningInteractions: 150,
   documentSummary: 100,
@@ -35,11 +30,17 @@ export const DEFAULT_QUOTA_LIMITS: Record<QuotaBucket, number> = {
   autoExplain: 300,
 }
 
-// Map API bucket names to database enum values
-export const BUCKET_TO_DB: Record<QuotaBucket, string> = {
-  learningInteractions: 'learningInteractions',
-  documentSummary: 'documentSummary',
-  sectionSummary: 'sectionSummary',
-  courseSummary: 'courseSummary',
-  autoExplain: 'autoExplain',
+export const ALL_QUOTA_BUCKETS: QuotaBucket[] = [
+  'learningInteractions',
+  'documentSummary',
+  'sectionSummary',
+  'courseSummary',
+  'autoExplain',
+]
+
+export function calculateNextResetDate(from: Date = new Date()): Date {
+  const resetDate = new Date(from)
+  resetDate.setMonth(resetDate.getMonth() + 1)
+  resetDate.setHours(0, 0, 0, 0)
+  return resetDate
 }

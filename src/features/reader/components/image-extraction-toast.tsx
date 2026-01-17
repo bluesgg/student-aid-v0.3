@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useImageExtractionProgress, type ImageExtractionStatus } from '../hooks/use-image-extraction-progress'
 
 interface ImageExtractionToastProps {
@@ -23,6 +24,7 @@ export function ImageExtractionToast({
   initialStatus = 'pending',
   initialProgress = 0,
 }: ImageExtractionToastProps) {
+  const t = useTranslations('reader.imageExtraction')
   const [isVisible, setIsVisible] = useState(false)
   const [isDismissing, setIsDismissing] = useState(false)
 
@@ -81,10 +83,10 @@ export function ImageExtractionToast({
           )}
           <span className="text-sm font-medium text-gray-900">
             {isCompleted
-              ? '图片检测完成'
+              ? t('complete')
               : isFailed
-              ? '图片检测部分完成'
-              : '正在检测图片...'}
+              ? t('partial')
+              : t('detecting')}
           </span>
         </div>
 
@@ -108,7 +110,7 @@ export function ImageExtractionToast({
           <div className="flex items-center justify-between text-xs text-gray-500">
             <span>{percentage}%</span>
             <span>
-              {progress}/{totalPages} 页
+              {t('pages', { current: progress, total: totalPages })}
             </span>
           </div>
         </div>

@@ -16,7 +16,7 @@ import { usePageNavigation } from '../hooks/use-page-navigation'
 import { useLastReadPage } from '../hooks/use-last-read-page'
 import { useTextSelection } from '../hooks/use-text-selection'
 import { useRectangleDrawing } from '../hooks/use-rectangle-drawing'
-import { useImageDetection } from '../hooks/use-image-detection'
+import { useImageDetection, detectImageAtPosition, normalizePageCoordinates, deleteDetectedImage } from '../hooks/use-image-detection'
 import { usePdfStickerHitTest } from '../hooks/use-pdf-sticker-hit-test'
 import { PdfToolbar, ZoomMode } from './pdf-toolbar'
 import { PdfPage } from './pdf-page'
@@ -118,7 +118,8 @@ export function PdfViewer({
   const [actualPageDimensions, setActualPageDimensions] = useState<{ width: number; height: number } | null>(null)
 
   // ==================== Reader Mode State ====================
-  const [readerMode, setReaderMode] = useState<ReaderMode>(() => getInitialReaderMode())
+  // Toggle temporarily disabled - always use 'page' mode
+  const [readerMode, setReaderMode] = useState<ReaderMode>('page')
 
   // ==================== Selection Mode State ====================
   const [selectionMode, setSelectionMode] = useState(false)
@@ -139,6 +140,8 @@ export function PdfViewer({
   const [noImagePopupOpen, setNoImagePopupOpen] = useState(false)
   const [noImagePopupPosition, setNoImagePopupPosition] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
   const [isInMarkMode, setIsInMarkMode] = useState(false) // Click-to-mark mode (distinct from rectangle drawing)
+  const [isDetectingImage, setIsDetectingImage] = useState(false) // Loading state for mark mode detection
+  const [isDeletingImage, setIsDeletingImage] = useState(false) // Loading state for deleting manual images
 
   // Canvas and crop storage (refs to persist across renders)
   const canvasMapRef = useRef<Map<number, HTMLCanvasElement>>(new Map())
@@ -270,6 +273,163 @@ export function PdfViewer({
     enabled: !selectionMode && !isInMarkMode, // Disable during selection modes
   })
 
+  // ==================== Scroll Mode Adapters ====================
+  // These adapters transform single-page data into per-page Maps/Sets for VirtualPdfList
+
+  // Create a Map of detected images by page (currently only has current page's images)
+  const detectedImagesByPage = useMemo(() => {
+    const map = new Map<number, typeof detectedImages>()
+    if (detectedImages.length > 0) {
+      map.set(currentPage, detectedImages)
+    }
+    return map
+  }, [currentPage, detectedImages])
+
+  // Create a Set of pages currently loading images
+  const loadingPages = useMemo(() => {
+    const set = new Set<number>()
+    if (isLoadingImages) {
+      set.add(currentPage)
+    }
+    return set
+  }, [currentPage, isLoadingImages])
+
+  // Adapted page area click handler for scroll mode (accepts page number)
+  const handleScrollModePageAreaClick = useCallback(async (page: number, e: React.MouseEvent) => {
+    // Skip if in rectangle drawing mode
+    if (selectionMode) {
+      return
+    }
+
+    // Skip if auto image detection is not enabled
+    if (!isAutoImageDetectionEnabled) {
+      return
+    }
+
+    // Skip if images are still loading for this page
+    if (isLoadingImages && page === currentPage) {
+      debugLog('[PdfViewer] Scroll mode click ignored - images still loading for page', page)
+      return
+    }
+
+    // Skip if already detecting
+    if (isDetectingImage) {
+      debugLog('[PdfViewer] Scroll mode click ignored - detection in progress')
+      return
+    }
+
+    // Get click position relative to container (for popup positioning)
+    const containerRect = containerRef.current?.getBoundingClientRect()
+    const containerX = containerRect ? e.clientX - containerRect.left : 0
+    const containerY = containerRect ? e.clientY - containerRect.top : 0
+
+    // In mark mode: try to detect image at click position first
+    if (isInMarkMode) {
+      // Get the page element to calculate normalized coordinates
+      const pageElement = containerRef.current?.querySelector(`[data-page-number="${page}"]`)
+      if (!pageElement) {
+        debugLog('[PdfViewer] Scroll mode mark click - page element not found')
+        setNoImagePopupPosition({ x: containerX, y: containerY })
+        setNoImagePopupOpen(true)
+        return
+      }
+
+      const pageRect = pageElement.getBoundingClientRect()
+      const pageX = e.clientX - pageRect.left
+      const pageY = e.clientY - pageRect.top
+      const { x: normalizedX, y: normalizedY } = normalizePageCoordinates(
+        pageX,
+        pageY,
+        pageRect.width,
+        pageRect.height
+      )
+
+      debugLog('[PdfViewer] Scroll mode mark click - attempting detection', {
+        page,
+        normalizedX,
+        normalizedY,
+        pageX,
+        pageY,
+      })
+
+      setIsDetectingImage(true)
+
+      try {
+        // Call the detection API
+        const result = await detectImageAtPosition(
+          courseId,
+          fileId,
+          page,
+          normalizedX,
+          normalizedY
+        )
+
+        debugLog('[PdfViewer] Scroll mode detection result:', result)
+
+        if (result.found && result.image) {
+          // Image found and saved! Invalidate cache to refresh overlay
+          debugLog('[PdfViewer] Scroll mode image detected and saved, invalidating cache')
+          await queryClient.invalidateQueries({
+            queryKey: ['detected-images', courseId, fileId],
+          })
+
+          // Show brief success feedback (flash the highlight)
+          setShowHighlightFeedback(true)
+          if (highlightFeedbackTimeoutRef.current) {
+            clearTimeout(highlightFeedbackTimeoutRef.current)
+          }
+          highlightFeedbackTimeoutRef.current = setTimeout(() => {
+            setShowHighlightFeedback(false)
+            highlightFeedbackTimeoutRef.current = null
+          }, 1500)
+
+          // Stay in mark mode for additional marking
+        } else {
+          // No image detected - show popup with "Draw manually" option
+          debugLog('[PdfViewer] Scroll mode no image detected at click position, showing popup')
+          setNoImagePopupPosition({ x: containerX, y: containerY })
+          setNoImagePopupOpen(true)
+          setShowHighlightFeedback(false)
+          if (highlightFeedbackTimeoutRef.current) {
+            clearTimeout(highlightFeedbackTimeoutRef.current)
+            highlightFeedbackTimeoutRef.current = null
+          }
+        }
+      } catch (error) {
+        console.error('[PdfViewer] Scroll mode detection API error:', error)
+        // On error, show popup as fallback
+        setNoImagePopupPosition({ x: containerX, y: containerY })
+        setNoImagePopupOpen(true)
+      } finally {
+        setIsDetectingImage(false)
+      }
+    } else {
+      // Not in mark mode: show brief highlight feedback
+      const pageImages = detectedImagesByPage.get(page) || []
+      if (pageImages.length > 0) {
+        debugLog('[PdfViewer] Scroll mode click - showing highlight feedback for page', page)
+        setShowHighlightFeedback(true)
+
+        // Clear after 2 seconds
+        if (highlightFeedbackTimeoutRef.current) {
+          clearTimeout(highlightFeedbackTimeoutRef.current)
+        }
+        highlightFeedbackTimeoutRef.current = setTimeout(() => {
+          setShowHighlightFeedback(false)
+          highlightFeedbackTimeoutRef.current = null
+        }, 2000)
+      }
+    }
+  }, [isAutoImageDetectionEnabled, detectedImagesByPage, selectionMode, isInMarkMode, isLoadingImages, currentPage, isDetectingImage, courseId, fileId, queryClient])
+
+  // Adapted sticker hit test handler for scroll mode (accepts page element and page number)
+  const handleScrollModeStickerHitTest = useCallback((e: React.MouseEvent<HTMLElement>, pageElement: HTMLElement, page: number) => {
+    // Only hit test if we're on the current page (since pageStickers is filtered for currentPage)
+    if (page === currentPage) {
+      handleStickerHitTest(e, pageElement)
+    }
+  }, [currentPage, handleStickerHitTest])
+
   // ==================== Canvas Registration ====================
   const handleCanvasReady = useCallback((page: number, canvas: HTMLCanvasElement) => {
     canvasMapRef.current.set(page, canvas)
@@ -290,48 +450,34 @@ export function PdfViewer({
 
   // ==================== Selection Mode Handlers ====================
   const handleSelectionModeChange = useCallback((enabled: boolean) => {
-    debugLog('[PdfViewer DEBUG] handleSelectionModeChange called', {
-      enabled,
-      currentPage,
-      isAutoImageDetectionEnabled,
-      currentDraftRegionsCount: draftRegions.length,
-      currentRegionCropsCount: regionCropsRef.current.size,
-    })
+    debugLog('[PdfViewer] handleSelectionModeChange', { enabled, isAutoImageDetectionEnabled })
+
     if (enabled) {
       // When auto image detection is enabled, enter mark mode (click-to-mark)
       // Otherwise enter traditional rectangle drawing mode
       if (isAutoImageDetectionEnabled) {
-        debugLog('[PdfViewer DEBUG] Entering mark mode (click-to-mark)')
         setIsInMarkMode(true)
-        setSelectionMode(false) // Not rectangle drawing mode
+        setSelectionMode(false)
       } else {
-        // Enter selection mode - capture root page
-        debugLog('[PdfViewer DEBUG] Entering rectangle selection mode')
         setSelectionMode(true)
         setIsInMarkMode(false)
         if (!sessionRootPage) {
           setSessionRootPage(currentPage)
         }
       }
-      // Close any open popup
       setNoImagePopupOpen(false)
     } else {
-      // Exit selection/mark mode - PRESERVE regions and crops
-      debugLog('[PdfViewer DEBUG] Exiting mode - PRESERVING regions', {
-        regionsPreserved: draftRegions.map(r => r.id),
-        cropsPreserved: Array.from(regionCropsRef.current.keys()),
-      })
+      // Exit selection/mark mode - preserve regions and crops
       setSelectionMode(false)
       setIsInMarkMode(false)
       setNoImagePopupOpen(false)
-      // Keep sessionRootPage and draftRegions intact
-      // Clear pending generation timeout (user exited mode)
+      // Clear pending generation timeout
       if (generationTimeoutRef.current) {
         clearTimeout(generationTimeoutRef.current)
         generationTimeoutRef.current = null
       }
     }
-  }, [currentPage, draftRegions, sessionRootPage, isAutoImageDetectionEnabled])
+  }, [currentPage, sessionRootPage, isAutoImageDetectionEnabled])
 
   // ==================== Save Manual Regions to Detection List ====================
   const saveManualRegionsToDetectionList = useCallback(async (regions: Region[]) => {
@@ -459,29 +605,22 @@ export function PdfViewer({
 
   // ==================== Region Handlers ====================
   const handleRegionComplete = useCallback(async (page: number, rect: NormalizedRect, id: string) => {
-    debugLog('[PdfViewer DEBUG] handleRegionComplete called', {
-      page,
-      regionId: id,
-      rect,
-      currentDraftRegionsCount: draftRegions.length,
-    })
-
     // Check region limit
     if (draftRegions.length >= MAX_REGIONS) {
-      console.warn('[PdfViewer DEBUG] Maximum regions reached - rejecting')
+      console.warn('[PdfViewer] Maximum regions reached')
       return
     }
 
     // Check for overlap with existing regions
     if (checkRegionOverlap(rect, page, draftRegions)) {
-      console.warn('[PdfViewer DEBUG] Region overlaps with existing selection - rejecting')
+      console.warn('[PdfViewer] Region overlaps with existing selection')
       return
     }
 
     // Get canvas for this page
     const canvas = canvasMapRef.current.get(page)
     if (!canvas) {
-      console.error('[PdfViewer DEBUG] Canvas not available for page', page, 'available pages:', Array.from(canvasMapRef.current.keys()))
+      console.error('[PdfViewer] Canvas not available for page', page)
       return
     }
 
@@ -489,40 +628,19 @@ export function PdfViewer({
       // Extract JPEG crop immediately
       const cropBlob = await cropPageRegion(canvas, rect)
       regionCropsRef.current.set(id, cropBlob)
-      debugLog('[PdfViewer DEBUG] Crop extracted and stored', {
-        regionId: id,
-        blobSize: cropBlob.size,
-        totalCropsStored: regionCropsRef.current.size,
-      })
 
       // Add region to state
-      setDraftRegions(prev => {
-        const newRegions = [...prev, { id, page, rect, status: 'draft' as const }]
-        debugLog('[PdfViewer DEBUG] Adding region to state', {
-          newRegionId: id,
-          newTotalCount: newRegions.length,
-        })
-        return newRegions
-      })
+      setDraftRegions(prev => [...prev, { id, page, rect, status: 'draft' as const }])
 
       // Trigger generation
       debouncedTriggerGeneration()
     } catch (error) {
-      console.error('[PdfViewer DEBUG] Failed to crop region:', error)
+      console.error('[PdfViewer] Failed to crop region:', error)
     }
   }, [draftRegions, debouncedTriggerGeneration])
 
   const handleDeleteRegion = useCallback((id: string) => {
-    debugLog('[PdfViewer DEBUG] handleDeleteRegion called', {
-      deletingId: id,
-      currentCount: draftRegions.length,
-      currentIds: draftRegions.map(r => r.id),
-    })
-
-    // Remove from state
     setDraftRegions(prev => prev.filter(r => r.id !== id))
-
-    // Remove cached crop
     regionCropsRef.current.delete(id)
 
     // Trigger generation with remaining regions (if any)
@@ -533,21 +651,42 @@ export function PdfViewer({
 
   // ==================== Auto Image Detection Handlers ====================
 
-  // Handle click on page area (for highlight feedback and mark mode)
-  const handlePageAreaClick = useCallback((e: React.MouseEvent) => {
-    // Skip if in rectangle drawing mode
-    if (selectionMode) {
-      return
+  // Handle delete of a manually detected image
+  const handleDeleteImage = useCallback(async (imageId: string) => {
+    if (isDeletingImage) return
+
+    setIsDeletingImage(true)
+    try {
+      await deleteDetectedImage(courseId, fileId, imageId)
+      // Invalidate cache to refresh overlay
+      await queryClient.invalidateQueries({
+        queryKey: ['detected-images', courseId, fileId],
+      })
+      debugLog('[PdfViewer] Successfully deleted manual image:', imageId)
+    } catch (error) {
+      console.error('[PdfViewer] Failed to delete image:', error)
+    } finally {
+      setIsDeletingImage(false)
     }
+  }, [courseId, fileId, isDeletingImage, queryClient])
+
+  // Handle click on page area (for highlight feedback and mark mode)
+  const handlePageAreaClick = useCallback(async (e: React.MouseEvent) => {
+    // Skip if in rectangle drawing mode
+    if (selectionMode) return
 
     // Skip if auto image detection is not enabled
-    if (!isAutoImageDetectionEnabled) {
-      return
-    }
+    if (!isAutoImageDetectionEnabled) return
 
     // Skip if images are still loading (lazy extraction in progress)
     if (isLoadingImages) {
       debugLog('[PdfViewer] Click ignored - images still loading')
+      return
+    }
+
+    // Skip if already detecting
+    if (isDetectingImage) {
+      debugLog('[PdfViewer] Click ignored - detection in progress')
       return
     }
 
@@ -556,15 +695,84 @@ export function PdfViewer({
     const containerX = containerRect ? e.clientX - containerRect.left : 0
     const containerY = containerRect ? e.clientY - containerRect.top : 0
 
-    // In mark mode: show the popup with "Draw manually" option
+    // In mark mode: try to detect image at click position first
     if (isInMarkMode) {
-      debugLog('[PdfViewer] Mark mode click - showing popup', { containerX, containerY })
-      setNoImagePopupPosition({ x: containerX, y: containerY })
-      setNoImagePopupOpen(true)
-      setShowHighlightFeedback(false)
-      if (highlightFeedbackTimeoutRef.current) {
-        clearTimeout(highlightFeedbackTimeoutRef.current)
-        highlightFeedbackTimeoutRef.current = null
+      // Get the page element to calculate normalized coordinates
+      const pageElement = containerRef.current?.querySelector(`[data-page-number="${currentPage}"]`)
+
+      if (!pageElement) {
+        debugLog('[PdfViewer] Mark mode click - page element not found')
+        setNoImagePopupPosition({ x: containerX, y: containerY })
+        setNoImagePopupOpen(true)
+        return
+      }
+
+      const pageRect = pageElement.getBoundingClientRect()
+      const pageX = e.clientX - pageRect.left
+      const pageY = e.clientY - pageRect.top
+      const { x: normalizedX, y: normalizedY } = normalizePageCoordinates(
+        pageX,
+        pageY,
+        pageRect.width,
+        pageRect.height
+      )
+
+      debugLog('[PdfViewer] Mark mode click - attempting detection', {
+        page: currentPage,
+        normalizedX,
+        normalizedY,
+      })
+
+      setIsDetectingImage(true)
+
+      try {
+        // Call the detection API
+        const result = await detectImageAtPosition(
+          courseId,
+          fileId,
+          currentPage,
+          normalizedX,
+          normalizedY
+        )
+
+        debugLog('[PdfViewer] Detection result:', result)
+
+        if (result.found && result.image) {
+          // Image found and saved! Invalidate cache to refresh overlay
+          debugLog('[PdfViewer] Image detected and saved, invalidating cache')
+          await queryClient.invalidateQueries({
+            queryKey: ['detected-images', courseId, fileId],
+          })
+
+          // Show brief success feedback (flash the highlight)
+          setShowHighlightFeedback(true)
+          if (highlightFeedbackTimeoutRef.current) {
+            clearTimeout(highlightFeedbackTimeoutRef.current)
+          }
+          highlightFeedbackTimeoutRef.current = setTimeout(() => {
+            setShowHighlightFeedback(false)
+            highlightFeedbackTimeoutRef.current = null
+          }, 1500)
+
+          // Stay in mark mode for additional marking - don't exit
+        } else {
+          // No image detected - show popup with "Draw manually" option
+          debugLog('[PdfViewer] No image detected at click position, showing popup')
+          setNoImagePopupPosition({ x: containerX, y: containerY })
+          setNoImagePopupOpen(true)
+          setShowHighlightFeedback(false)
+          if (highlightFeedbackTimeoutRef.current) {
+            clearTimeout(highlightFeedbackTimeoutRef.current)
+            highlightFeedbackTimeoutRef.current = null
+          }
+        }
+      } catch (error) {
+        console.error('[PdfViewer] Detection API error:', error)
+        // On error, show popup as fallback
+        setNoImagePopupPosition({ x: containerX, y: containerY })
+        setNoImagePopupOpen(true)
+      } finally {
+        setIsDetectingImage(false)
       }
     } else if (detectedImages.length > 0) {
       // Not in mark mode but we have detected images: show brief highlight feedback
@@ -580,7 +788,7 @@ export function PdfViewer({
         highlightFeedbackTimeoutRef.current = null
       }, 2000)
     }
-  }, [isAutoImageDetectionEnabled, detectedImages, selectionMode, isInMarkMode, isLoadingImages])
+  }, [isAutoImageDetectionEnabled, detectedImages, selectionMode, isInMarkMode, isLoadingImages, isDetectingImage, currentPage, courseId, fileId, queryClient])
 
   // Handle "Draw manually" button from the no-image-detected popup
   const handleDrawManually = useCallback(() => {
@@ -633,7 +841,8 @@ export function PdfViewer({
   })
 
   // ==================== Reader Mode Handler ====================
-  const handleReaderModeChange = useCallback((mode: ReaderMode) => {
+  // Temporarily disabled - scroll mode toggle hidden from UI
+  const _handleReaderModeChange = useCallback((mode: ReaderMode) => {
     setReaderMode(mode)
     setStoredReaderMode(mode)
     syncModeToURL(mode)
@@ -753,6 +962,32 @@ export function PdfViewer({
     }
   }, [readerMode, currentPage, goToPreviousPage])
 
+  // Keyboard navigation for page mode
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only active in page mode
+      if (readerMode !== 'page') return
+
+      // Ignore when focus is on input elements
+      const target = e.target as HTMLElement
+      if (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable) {
+        return
+      }
+
+      // Handle arrow keys for page navigation
+      if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+        e.preventDefault()
+        handleNextPage()
+      } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+        e.preventDefault()
+        handlePreviousPage()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [readerMode, handleNextPage, handlePreviousPage])
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
@@ -774,7 +1009,7 @@ export function PdfViewer({
         selectionModeAvailable={!isScanned}
         isGenerating={isGenerating}
         readerMode={readerMode}
-        onReaderModeChange={handleReaderModeChange}
+        // onReaderModeChange={_handleReaderModeChange} // Temporarily hidden
         isAutoImageDetectionEnabled={isAutoImageDetectionEnabled}
       />
 
@@ -890,6 +1125,8 @@ export function PdfViewer({
                       pageWidth={actualPageDimensions.width}
                       pageHeight={actualPageDimensions.height}
                       showHighlightFeedback={showHighlightFeedback}
+                      onDeleteImage={handleDeleteImage}
+                      isDeletingImage={isDeletingImage}
                     />
                   )}
                   {/* Lazy Extraction Loading Indicator - show when images are being loaded/extracted */}
@@ -936,6 +1173,16 @@ export function PdfViewer({
                   drawingRect={currentRect}
                   drawingPage={drawing.page}
                   pageDimensionsRef={pageDimensionsRef}
+                  // Scroll mode feature parity props (Task 3)
+                  isAutoImageDetectionEnabled={isAutoImageDetectionEnabled}
+                  detectedImagesByPage={detectedImagesByPage}
+                  showHighlightFeedback={showHighlightFeedback}
+                  loadingPages={loadingPages}
+                  hoveredStickerRect={hoveredStickerRect}
+                  hoveredStickerPage={hoveredStickerPage}
+                  onPageAreaClick={handleScrollModePageAreaClick}
+                  onStickerHitTestMove={handleScrollModeStickerHitTest}
+                  onStickerHitTestLeave={handleStickerHitTestLeave}
                 />
               </div>
             )}

@@ -9,17 +9,23 @@ interface CourseCardProps {
   onDelete?: (course: Course) => void
 }
 
+const LOCALE_MAP: Record<string, string> = { zh: 'zh-CN', en: 'en-US' }
+const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
+  month: 'short',
+  day: 'numeric',
+  year: 'numeric',
+}
+
 export function CourseCard({ course, onDelete }: CourseCardProps) {
   const t = useTranslations('courses')
   const locale = useLocale()
 
-  const formatDate = (dateString: string | null) => {
+  const formatDate = (dateString: string | null): string => {
     if (!dateString) return t('neverVisited')
-    return new Date(dateString).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
-      month: 'short',
-      day: 'numeric',
-      year: 'numeric',
-    })
+    return new Date(dateString).toLocaleDateString(
+      LOCALE_MAP[locale] || 'en-US',
+      DATE_FORMAT_OPTIONS
+    )
   }
 
   return (

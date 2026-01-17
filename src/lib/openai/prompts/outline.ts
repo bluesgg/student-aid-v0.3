@@ -114,25 +114,21 @@ EXAMPLE OUTPUT:
 Return ONLY the JSON array, no additional text.`
 }
 
-/**
- * Parse outline from LLM response.
- * Handles potential JSON parsing issues.
- */
+function stripMarkdownCodeBlock(text: string): string {
+  let result = text.trim()
+  if (result.startsWith('```json')) {
+    result = result.slice(7)
+  } else if (result.startsWith('```')) {
+    result = result.slice(3)
+  }
+  if (result.endsWith('```')) {
+    result = result.slice(0, -3)
+  }
+  return result.trim()
+}
+
 export function parseOutlineResponse(response: string): OutlineNode[] {
-  // Try to extract JSON from the response
-  let jsonStr = response.trim()
-
-  // Remove markdown code blocks if present
-  if (jsonStr.startsWith('```json')) {
-    jsonStr = jsonStr.slice(7)
-  } else if (jsonStr.startsWith('```')) {
-    jsonStr = jsonStr.slice(3)
-  }
-  if (jsonStr.endsWith('```')) {
-    jsonStr = jsonStr.slice(0, -3)
-  }
-
-  jsonStr = jsonStr.trim()
+  const jsonStr = stripMarkdownCodeBlock(response)
 
   try {
     const parsed = JSON.parse(jsonStr)
@@ -141,7 +137,6 @@ export function parseOutlineResponse(response: string): OutlineNode[] {
       throw new Error('Response is not an array')
     }
 
-    // Validate and sanitize the outline
     return sanitizeOutline(parsed)
   } catch (error) {
     console.error('Failed to parse outline response:', error)

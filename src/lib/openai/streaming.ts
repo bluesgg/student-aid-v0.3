@@ -1,7 +1,3 @@
-/**
- * Server-Sent Events (SSE) streaming utilities for OpenAI responses.
- */
-
 import { Stream } from 'openai/streaming'
 import { ChatCompletionChunk } from 'openai/resources/chat/completions'
 
@@ -17,10 +13,16 @@ export interface TokenTracker {
   firstTokenReceived: boolean
 }
 
-/**
- * Create a ReadableStream from an OpenAI streaming response.
- * Also tracks token counts and whether first token was received.
- */
+const SSE_HEADERS = {
+  'Content-Type': 'text/event-stream',
+  'Cache-Control': 'no-cache',
+  'Connection': 'keep-alive',
+}
+
+function formatSSE(data: Record<string, unknown>): string {
+  return `data: ${JSON.stringify(data)}\n\n`
+}
+
 export function createStreamingResponse(
   openaiStream: Stream<ChatCompletionChunk>,
   onComplete?: (content: string, tokens: TokenTracker) => void
@@ -56,9 +58,7 @@ export function createStreamingResponse(
             // Estimate output tokens (rough approximation)
             tokenTracker.outputTokens += Math.ceil(content.length / 4)
 
-            // Send SSE formatted data
-            const sseData = `data: ${JSON.stringify({ content, done: false })}\n\n`
-            controller.enqueue(encoder.encode(sseData))
+            controller.enqueue(encoder.encode(formatSSE({ content, done: false })))
           }
 
           // Check for finish reason
@@ -71,9 +71,7 @@ export function createStreamingResponse(
           }
         }
 
-        // Send completion signal
-        const doneData = `data: ${JSON.stringify({ content: '', done: true })}\n\n`
-        controller.enqueue(encoder.encode(doneData))
+        controller.enqueue(encoder.encode(formatSSE({ content: '', done: true })))
         controller.close()
 
         // Resolve content promise
@@ -83,8 +81,7 @@ export function createStreamingResponse(
         onComplete?.(fullContent, tokenTracker)
       } catch (error) {
         console.error('Streaming error:', error)
-        const errorData = `data: ${JSON.stringify({ error: 'Streaming failed', done: true })}\n\n`
-        controller.enqueue(encoder.encode(errorData))
+        controller.enqueue(encoder.encode(formatSSE({ error: 'Streaming failed', done: true })))
         controller.close()
         resolveContent(fullContent)
       }
@@ -98,22 +95,10 @@ export function createStreamingResponse(
   }
 }
 
-/**
- * Create a streaming HTTP response with proper headers.
- */
 export function createSSEResponse(stream: ReadableStream<Uint8Array>): Response {
-  return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-    },
-  })
+  return new Response(stream, { headers: SSE_HEADERS })
 }
 
-/**
- * Parse SSE events from a fetch response (client-side use).
- */
 export async function* parseSSEStream(
   response: Response
 ): AsyncGenerator<{ content: string; done: boolean; error?: string }> {

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { type ReaderMode } from '@/lib/reader/types'
 
 export type ZoomMode = 'custom' | 'fit-width' | 'fit-page'
@@ -58,6 +59,7 @@ export function PdfToolbar({
   onReaderModeChange,
   isAutoImageDetectionEnabled = false,
 }: PdfToolbarProps) {
+  const t = useTranslations('reader')
   const [pageInput, setPageInput] = useState(currentPage.toString())
 
   // Handle page input change
@@ -114,7 +116,7 @@ export function PdfToolbar({
           onClick={onPreviousPage}
           disabled={!canGoPrevious}
           className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Previous page"
+          title={t('toolbar.previousPage')}
         >
           <svg
             className="h-5 w-5"
@@ -146,7 +148,7 @@ export function PdfToolbar({
           onClick={onNextPage}
           disabled={!canGoNext}
           className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Next page"
+          title={t('toolbar.nextPage')}
         >
           <svg
             className="h-5 w-5"
@@ -170,7 +172,7 @@ export function PdfToolbar({
           onClick={zoomOut}
           disabled={scale <= 0.25}
           className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Zoom out"
+          title={t('toolbar.zoomOut')}
         >
           <svg
             className="h-5 w-5"
@@ -192,9 +194,9 @@ export function PdfToolbar({
           onChange={handleZoomChange}
           className="rounded border border-gray-300 px-2 py-1 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
         >
-          <option value="fit-width">Fit Width</option>
-          <option value="fit-page">Fit Page</option>
-          <optgroup label="Zoom">
+          <option value="fit-width">{t('zoom.fitWidth')}</option>
+          <option value="fit-page">{t('zoom.fitPage')}</option>
+          <optgroup label={t('zoom.label')}>
             {ZOOM_PRESETS.map((preset) => (
               <option key={preset} value={preset}>
                 {Math.round(preset * 100)}%
@@ -207,7 +209,7 @@ export function PdfToolbar({
           onClick={zoomIn}
           disabled={scale >= 3}
           className="rounded p-1.5 text-gray-600 hover:bg-gray-100 disabled:cursor-not-allowed disabled:opacity-40"
-          title="Zoom in"
+          title={t('toolbar.zoomIn')}
         >
           <svg
             className="h-5 w-5"
@@ -229,7 +231,7 @@ export function PdfToolbar({
           <div className="ml-2 border-l border-gray-200 pl-2">
             <div
               role="radiogroup"
-              aria-label="Reading mode"
+              aria-label={t('readerMode.pageLabel')}
               className="flex rounded-md border border-gray-300 bg-gray-50"
             >
               <button
@@ -248,7 +250,7 @@ export function PdfToolbar({
                     ? 'bg-white text-gray-900 shadow-sm rounded-l-md'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
-                title="Single page view"
+                title={t('readerMode.pageTitle')}
               >
                 {/* Page icon */}
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -259,7 +261,7 @@ export function PdfToolbar({
                     d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
                   />
                 </svg>
-                <span className="hidden sm:inline">Page</span>
+                <span className="hidden sm:inline">{t('readerMode.pageLabel')}</span>
               </button>
               <button
                 role="radio"
@@ -277,7 +279,7 @@ export function PdfToolbar({
                     ? 'bg-white text-gray-900 shadow-sm rounded-r-md'
                     : 'text-gray-600 hover:text-gray-900'
                 }`}
-                title="Continuous scroll view"
+                title={t('readerMode.scrollTitle')}
               >
                 {/* Scroll icon */}
                 <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -288,7 +290,7 @@ export function PdfToolbar({
                     d="M4 6h16M4 10h16M4 14h16M4 18h16"
                   />
                 </svg>
-                <span className="hidden sm:inline">Scroll</span>
+                <span className="hidden sm:inline">{t('readerMode.scrollLabel')}</span>
               </button>
             </div>
           </div>
@@ -309,12 +311,12 @@ export function PdfToolbar({
             } disabled:cursor-not-allowed disabled:opacity-50`}
             title={
               !selectionModeAvailable
-                ? 'Not available for scanned PDFs'
+                ? t('scannedNotAvailable')
                 : selectionMode
-                ? 'Exit mark mode'
+                ? t('exitMarkMode')
                 : isAutoImageDetectionEnabled
-                ? 'Click an image to explain, or draw rectangle for missed images'
-                : 'Select image regions to explain'
+                ? t('markImageTooltip')
+                : t('selectImages')
             }
           >
             {/* Tag icon for "Mark Image", Bounding box for "Select Images" */}
@@ -339,10 +341,10 @@ export function PdfToolbar({
             )}
             <span className="hidden sm:inline">
               {selectionMode
-                ? isAutoImageDetectionEnabled ? 'Exit' : 'Exit Selection'
+                ? isAutoImageDetectionEnabled ? t('exitMarkMode') : t('exitSelection')
                 : isAutoImageDetectionEnabled
-                ? 'Mark Image'
-                : 'Select Images'}
+                ? t('markImage')
+                : t('selectImages')}
             </span>
           </button>
         )}
@@ -351,7 +353,7 @@ export function PdfToolbar({
         {isGenerating && (
           <span className="flex items-center gap-1.5 text-sm text-blue-600">
             <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
-            <span className="hidden sm:inline">Generating...</span>
+            <span className="hidden sm:inline">{t('toolbar.generating')}</span>
           </span>
         )}
       </div>
