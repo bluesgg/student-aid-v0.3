@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
 import * as authApi from '../api'
 import { isApiError, ApiClientError } from '@/lib/api-client'
+import { signedUrlCache } from '@/lib/pdf/url-cache'
 
 /**
  * Hook for getting current user
@@ -88,8 +89,13 @@ export function useLogout() {
       return result.data
     },
     onSuccess: () => {
+      // Clear signed URL cache (session-specific)
+      signedUrlCache.clear()
+
+      // Clear React Query cache
       queryClient.setQueryData(['user'], null)
       queryClient.clear()
+
       router.push('/login')
     },
   })

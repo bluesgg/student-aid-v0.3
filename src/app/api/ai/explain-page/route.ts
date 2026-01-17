@@ -39,9 +39,26 @@ import {
 import { getOrDetectPdfType, type PdfType } from '@/lib/pdf/type-detector'
 import { isFeatureEnabled } from '@/lib/feature-flags'
 import { z } from 'zod'
+import { getLocalizedSystemPrompt, type Locale } from '@/lib/user-preferences'
 
 // Required for multipart form data parsing with File handling
 export const runtime = 'nodejs'
+
+/**
+ * Normalize locale to StickerLocale format.
+ * Converts 'zh' to 'zh-Hans' for compatibility with shared cache.
+ */
+function normalizeToStickerLocale(locale: 'en' | 'zh' | 'zh-Hans'): StickerLocale {
+  return locale === 'zh' ? 'zh-Hans' : locale as StickerLocale
+}
+
+/**
+ * Normalize locale to user preferences format.
+ * Converts 'zh-Hans' to 'zh' for compatibility with getLocalizedSystemPrompt.
+ */
+function normalizeToUserLocale(locale: 'en' | 'zh' | 'zh-Hans'): Locale {
+  return locale === 'zh-Hans' ? 'zh' : locale as Locale
+}
 
 // ==================== Zod Schemas ====================
 
@@ -75,7 +92,7 @@ const requestSchema = z.object({
   fileId: z.string().uuid(),
   page: z.number().int().positive(),
   pdfType: z.enum(['Lecture', 'Homework', 'Exam', 'Other']),
-  locale: z.enum(['en', 'zh-Hans']).optional().default('en'),
+  locale: z.enum(['en', 'zh', 'zh-Hans']).optional().default('en'),
   mode: z.enum(['single', 'window']).optional().default('single'),
 })
 
@@ -85,7 +102,7 @@ const multipartPayloadSchema = z.object({
   fileId: z.string().uuid(),
   page: z.number().int().positive(), // This is the root page (session root)
   pdfType: z.enum(['Lecture', 'Homework', 'Exam', 'Other']),
-  locale: z.enum(['en', 'zh-Hans']).optional().default('en'),
+  locale: z.enum(['en', 'zh', 'zh-Hans']).optional().default('en'),
   effectiveMode: z.literal('with_selected_images'),
   selectedImageRegions: z.array(selectedImageRegionSchema)
     .min(1, 'At least 1 region required')
@@ -103,7 +120,7 @@ interface MultipartPayload {
   fileId: string
   page: number
   pdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
-  locale: 'en' | 'zh-Hans'
+  locale: 'en' | 'zh' | 'zh-Hans'
   effectiveMode: 'with_selected_images'
   selectedImageRegions: SelectedImageRegion[]
   textSelection?: {
@@ -157,7 +174,7 @@ export async function POST(request: NextRequest) {
     let fileId: string
     let page: number
     let pdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
-    let locale: 'en' | 'zh-Hans'
+    let locale: 'en' | 'zh' | 'zh-Hans'
     let isSelectedImagesMode = false
     let multipartData: ParsedMultipartRequest | null = null
 
@@ -277,7 +294,7 @@ export async function POST(request: NextRequest) {
       await recordLatencySample({
         pdfHash: file.content_hash || undefined,
         page,
-        locale,
+        locale: normalizeToStickerLocale(locale),
         latencyMs,
         cacheHit: true,
       })
@@ -339,7 +356,7 @@ export async function POST(request: NextRequest) {
           selectionHash = computeSelectionHash({
             rootPage: page,
             effectiveMode,
-            locale,
+            locale: normalizeToStickerLocale(locale),
             regions: multipartData.payload.selectedImageRegions,
           })
         } else {
@@ -364,7 +381,7 @@ export async function POST(request: NextRequest) {
         const cacheResult = await checkSharedCache(
           contentHash,
           page,
-          locale as StickerLocale,
+          normalizeToStickerLocale(locale),
           effectiveMode,
           selectionHash
         )
@@ -379,7 +396,7 @@ export async function POST(request: NextRequest) {
           await recordLatencySample({
             pdfHash: contentHash,
             page,
-            locale,
+            locale: normalizeToStickerLocale(locale),
             effectiveMode,
             latencyMs,
             cacheHit: true,
@@ -425,7 +442,7 @@ export async function POST(request: NextRequest) {
           const startResult = await tryStartGeneration({
             pdfHash: contentHash,
             page,
-            locale: locale as StickerLocale,
+            locale: normalizeToStickerLocale(locale),
             effectiveMode,
             userId: user.id,
             quotaUnits: 1,
@@ -541,12 +558,13 @@ async function syncGenerateStickers(
     totalPages: file.page_count,
   })
 
-  // Build system message with optional context hint
+  // Build system message with optional context hint and locale
   const baseSystemMessage =
     'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations.'
+  const localizedBaseMessage = getLocalizedSystemPrompt(baseSystemMessage, normalizeToUserLocale(locale as 'en' | 'zh' | 'zh-Hans'))
   const systemMessage = contextHint
-    ? `${baseSystemMessage}\n${contextHint}`
-    : baseSystemMessage
+    ? `${localizedBaseMessage}\n${contextHint}`
+    : localizedBaseMessage
 
   // Call OpenAI
   const openai = getOpenAIClient()
@@ -604,7 +622,7 @@ async function syncGenerateStickers(
   await recordLatencySample({
     pdfHash: file.content_hash || undefined,
     page,
-    locale: locale as StickerLocale,
+    locale: normalizeToStickerLocale(locale as 'en' | 'zh' | 'zh-Hans'),
     latencyMs,
     cacheHit: false,
   })
@@ -935,7 +953,7 @@ async function handleWindowMode(
     fileId: string
     page: number
     pdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
-    locale: 'en' | 'zh-Hans'
+    locale: 'en' | 'zh' | 'zh-Hans'
   }
 ): Promise<NextResponse> {
   const { user, courseId, fileId, page, pdfType, locale } = params
@@ -1020,6 +1038,7 @@ async function handleWindowMode(
         userPdfType: pdfType,
         courseId,
         totalPages: file.page_count,
+        locale: normalizeToUserLocale(locale),
       }).catch((err) => {
         console.error('Background window generation error:', err)
       })
@@ -1055,8 +1074,9 @@ async function runWindowGeneration(params: {
   userPdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
   courseId: string
   totalPages: number
+  locale: Locale
 }) {
-  const { session, pdfBuffer, pdfType, userPdfType, courseId, totalPages } = params
+  const { session, pdfBuffer, pdfType, userPdfType, courseId, totalPages, locale } = params
 
   try {
     // Get pages to generate in priority order (current, +1, -1, +2, +3, -2, +4, +5)
@@ -1084,6 +1104,7 @@ async function runWindowGeneration(params: {
         totalPages,
         sessionId: session.sessionId,
         saveImmediately: true, // Save each sticker immediately for progressive display
+        locale,
         onPageComplete: (result) => {
           console.log(`PPT page ${result.page} completed:`, result.success)
         },
@@ -1096,6 +1117,7 @@ async function runWindowGeneration(params: {
         fileId: session.fileId,
         sessionId: session.sessionId,
         saveImmediately: true, // Save each sticker immediately for progressive display
+        locale,
         onPageComplete: (page, stickerCount) => {
           console.log(`Text page ${page} completed with ${stickerCount} stickers`)
         },

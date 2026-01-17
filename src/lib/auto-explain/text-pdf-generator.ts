@@ -13,6 +13,7 @@ import {
 import { getOpenAIClient, DEFAULT_MODEL } from '@/lib/openai/client'
 import { retrieveContextForPage, buildContextHint } from '@/lib/context'
 import { updateSessionProgress } from './window-manager'
+import { getLocalizedSystemPrompt, type Locale } from '@/lib/user-preferences'
 
 // Word count thresholds for accumulation
 const MIN_WORD_COUNT = 300
@@ -79,9 +80,10 @@ async function generateExplanation(
     fileId: string
     currentPage: number
     signal?: AbortSignal
+    locale?: Locale
   }
 ): Promise<string | null> {
-  const { userId, courseId, fileId, currentPage, signal } = options
+  const { userId, courseId, fileId, currentPage, signal, locale = 'en' } = options
 
   if (signal?.aborted) {
     return null
@@ -106,9 +108,11 @@ async function generateExplanation(
 
   const baseSystemMessage =
     'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations.'
+  // Apply locale-specific instructions
+  const localizedBaseMessage = getLocalizedSystemPrompt(baseSystemMessage, locale)
   const systemMessage = contextHint
-    ? `${baseSystemMessage}\n${contextHint}`
-    : baseSystemMessage
+    ? `${localizedBaseMessage}\n${contextHint}`
+    : localizedBaseMessage
 
   const prompt = buildTextExplanationPrompt(text, pageInfo)
 
@@ -145,13 +149,14 @@ async function flushAccumulator(
     courseId: string
     fileId: string
     signal?: AbortSignal
+    locale?: Locale
   }
 ): Promise<TextPdfSticker | null> {
   if (acc.paragraphs.length === 0 || acc.totalWords < ABSOLUTE_MIN_WORD_COUNT) {
     return null
   }
 
-  const { userId, courseId, fileId, signal } = options
+  const { userId, courseId, fileId, signal, locale } = options
 
   // Build text from paragraphs
   const fullText = acc.paragraphs.map((p) => p.text).join('\n\n')
@@ -171,6 +176,7 @@ async function flushAccumulator(
     fileId,
     currentPage: startPage,
     signal,
+    locale,
   })
 
   if (!explanation) {
@@ -224,9 +230,10 @@ export async function generateTextPdfStickers(
     signal?: AbortSignal
     /** Save stickers immediately after generation (for progressive display) */
     saveImmediately?: boolean
+    locale?: Locale
   }
 ): Promise<TextPdfSticker[]> {
-  const { userId, courseId, fileId, sessionId, onPageComplete, signal, saveImmediately } = options
+  const { userId, courseId, fileId, sessionId, onPageComplete, signal, saveImmediately, locale } = options
   const stickers: TextPdfSticker[] = []
 
   // Accumulator for cross-page paragraphs
@@ -277,6 +284,7 @@ export async function generateTextPdfStickers(
           courseId,
           fileId,
           signal,
+          locale,
         })
 
         if (sticker) {
@@ -320,6 +328,7 @@ export async function generateTextPdfStickers(
       courseId,
       fileId,
       signal,
+      locale,
     })
 
     if (sticker) {

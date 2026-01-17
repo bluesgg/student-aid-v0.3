@@ -94,6 +94,7 @@ export function explainPage(params: {
   fileId: string
   page: number
   pdfType: PdfType
+  locale?: string
 }): Promise<ApiResult<ExplainPageResponse>> {
   return post<ExplainPageResponse>('/api/ai/explain-page', params)
 }
@@ -109,6 +110,7 @@ export async function explainSelection(
     selectedText: string
     parentId?: string | null
     pdfType: PdfType
+    locale?: string
   },
   onChunk: (chunk: string) => void,
   onComplete: (stickerId: string) => void
@@ -154,6 +156,7 @@ export function explainSelectionSync(params: {
   selectedText: string
   parentId?: string | null
   pdfType: PdfType
+  locale?: string
 }): Promise<ApiResult<ExplainSelectionResponse>> {
   return post<ExplainSelectionResponse>('/api/ai/explain-selection', params)
 }

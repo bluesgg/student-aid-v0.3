@@ -105,7 +105,14 @@ export function StickerPanel({
     const prevIds = prevAutoStickerIdsRef.current
 
     // Find new stickers (in current but not in previous)
-    const newStickers = autoStickers.filter(s => !prevIds.has(s.id))
+    // AND created within the last 5 seconds (to avoid animating old stickers on page switch)
+    const now = Date.now()
+    const newStickers = autoStickers.filter(s => {
+      const isNew = !prevIds.has(s.id)
+      const createdAt = new Date(s.createdAt).getTime()
+      const isRecent = (now - createdAt) < 5000 // 5 seconds threshold
+      return isNew && isRecent
+    })
 
     // If there's a new sticker and we're not already streaming one
     if (newStickers.length > 0 && !streamingAutoSticker) {

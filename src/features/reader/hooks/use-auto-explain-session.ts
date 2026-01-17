@@ -41,7 +41,7 @@ interface StartWindowExplainParams {
   fileId: string
   page: number
   pdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
-  locale?: 'en' | 'zh-Hans'
+  locale?: 'en' | 'zh' | 'zh-Hans'
   mode: 'window'
 }
 

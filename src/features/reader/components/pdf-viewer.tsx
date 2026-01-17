@@ -11,6 +11,7 @@ import '@/lib/pdf/worker'
 import { debugLog } from '@/lib/debug'
 
 import { usePdfDocument } from '../hooks/use-pdf-document'
+import { usePdfLoadMetrics } from '../hooks/use-pdf-load-metrics'
 import { usePageNavigation } from '../hooks/use-page-navigation'
 import { useLastReadPage } from '../hooks/use-last-read-page'
 import { useTextSelection } from '../hooks/use-text-selection'
@@ -44,6 +45,7 @@ import {
 import type { AutoExplainSession } from '../hooks/use-auto-explain-session'
 
 interface PdfViewerProps {
+  /** URL to load the PDF from (fallback if pdfSource not provided) */
   fileUrl: string
   courseId: string
   fileId: string
@@ -70,6 +72,10 @@ interface PdfViewerProps {
   onSelectedRegionsChange?: (hasRegions: boolean, count: number) => void
   /** Trigger to start image explanation */
   triggerImageExplanation?: boolean
+  /** PDF source data - can be ArrayBuffer (from cache) or URL string */
+  pdfSource?: ArrayBuffer | string | null
+  /** Whether PDF is loading from cache */
+  isCached?: boolean
 }
 
 /** Maximum regions per selection session */
@@ -97,6 +103,8 @@ export function PdfViewer({
   cancelAutoExplainSession: _cancelAutoExplainSession,
   onSelectedRegionsChange,
   triggerImageExplanation,
+  pdfSource,
+  isCached = false,
 }: PdfViewerProps) {
   const queryClient = useQueryClient()
   const containerRef = useRef<HTMLDivElement>(null)
@@ -177,6 +185,15 @@ export function PdfViewer({
   // PDF document state
   const { numPages, isLoading, isFirstPageReady, error, loadingProgress, onDocumentLoadSuccess, onDocumentLoadError, onLoadProgress, markFirstPageReady } =
     usePdfDocument()
+
+  // Performance metrics tracking
+  const { markFirstPageReady: markMetricsFirstPage } = usePdfLoadMetrics({
+    fileId,
+    isCached,
+    isDocumentReady: !isLoading && numPages > 0,
+    numPages,
+    fileSizeBytes: null, // File size not readily available here
+  })
 
   // Last read page persistence
   const { currentPage, setPage: setPageInternal, isSaving } = useLastReadPage({
@@ -261,9 +278,11 @@ export function PdfViewer({
       setIsFirstPageRendered(true)
       // Mark first page ready for progressive loading progress indicator
       markFirstPageReady()
+      // Mark first page ready for performance metrics
+      markMetricsFirstPage()
       debugLog('[PdfViewer] First page rendered, enabling image detection')
     }
-  }, [isFirstPageRendered, markFirstPageReady])
+  }, [isFirstPageRendered, markFirstPageReady, markMetricsFirstPage])
 
   const handleCanvasUnmount = useCallback((page: number) => {
     canvasMapRef.current.delete(page)
@@ -779,6 +798,7 @@ export function PdfViewer({
             <PdfLoadingProgress
               progress={loadingProgress}
               firstPageReady={isFirstPageReady}
+              isCached={isCached}
             />
           </div>
         )}
@@ -810,7 +830,7 @@ export function PdfViewer({
         {/* PDF Document */}
         {!error && (
           <Document
-            file={fileUrl}
+            file={pdfSource || fileUrl}
             onLoadSuccess={onDocumentLoadSuccess}
             onLoadError={onDocumentLoadError}
             onLoadProgress={onLoadProgress}

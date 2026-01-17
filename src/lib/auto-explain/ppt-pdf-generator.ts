@@ -8,6 +8,7 @@ import { extractPageText } from '@/lib/pdf/extract'
 import { getOpenAIClient, DEFAULT_MODEL } from '@/lib/openai/client'
 import { retrieveContextForPage, buildContextHint } from '@/lib/context'
 import { updateSessionProgress } from './window-manager'
+import { getLocalizedSystemPrompt, type Locale } from '@/lib/user-preferences'
 import type { ChatCompletionTool } from 'openai/resources/chat/completions'
 
 /**
@@ -74,9 +75,10 @@ export async function generatePptPageSticker(
     totalPages: number
     sessionId?: string
     signal?: AbortSignal
+    locale?: Locale
   }
 ): Promise<PageGenerationResult> {
-  const { userId, courseId, fileId, pdfType, totalPages, sessionId, signal } = options
+  const { userId, courseId, fileId, pdfType, totalPages, sessionId, signal, locale = 'en' } = options
 
   try {
     // Check abort signal
@@ -146,9 +148,11 @@ Your explanation should:
 5. Be thorough but concise (150-400 words)
 6. Use proper Markdown formatting (headers, lists, bold/italic)`
 
+    // Apply locale-specific instructions
+    const localizedBaseMessage = getLocalizedSystemPrompt(baseSystemMessage, locale)
     const systemMessage = contextHint
-      ? `${baseSystemMessage}\n\n${contextHint}`
-      : baseSystemMessage
+      ? `${localizedBaseMessage}\n\n${contextHint}`
+      : localizedBaseMessage
 
     const userPrompt = `Please explain this slide:\n\n${pageText}`
 
@@ -241,6 +245,7 @@ export async function generatePptPdfStickers(
     onPageComplete?: (result: PageGenerationResult) => void
     /** Save stickers immediately after each page generation (for progressive display) */
     saveImmediately?: boolean
+    locale?: Locale
   }
 ): Promise<GeneratedSticker[]> {
   const allStickers: GeneratedSticker[] = []

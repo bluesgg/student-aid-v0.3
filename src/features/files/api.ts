@@ -25,6 +25,8 @@ export interface FileWithUrl extends CourseFile {
   downloadUrl: string | null
   imageExtractionStatus: ImageExtractionStatus
   imageExtractionProgress: number
+  /** Content hash for cache validation (computed during upload) */
+  contentHash: string | null
 }
 
 export interface GroupedFiles {

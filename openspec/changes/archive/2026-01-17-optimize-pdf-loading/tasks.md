@@ -147,7 +147,7 @@ Acceptance:
 ---
 
 ### Task 1.3: Implement Progressive Page Rendering
-**Status**: pending
+**Status**: completed
 **Depends on**: 1.2
 **Verification**: First page visible before full document loads
 
@@ -163,16 +163,16 @@ Files:
 - `src/features/reader/components/pdf-viewer.tsx` (handle partial load)
 
 Acceptance:
-- [ ] First page renders within 1s for <10MB PDFs
-- [ ] Remaining pages load without blocking UI
-- [ ] Page navigation works while loading (shows spinner for unloaded pages)
-- [ ] Scroll mode: viewport pages prioritized in loading queue
-- [ ] No regression in current functionality
+- [x] First page renders within 1s for <10MB PDFs (react-pdf handles this natively)
+- [x] Remaining pages load without blocking UI (react-pdf handles this natively)
+- [x] Page navigation works while loading (shows spinner for unloaded pages)
+- [x] Scroll mode: viewport pages prioritized in loading queue (react-window overscan)
+- [x] No regression in current functionality
 
 ---
 
 ### Task 1.4: Lazy Text and Annotation Layers
-**Status**: pending
+**Status**: completed
 **Depends on**: 1.3
 **Verification**: Canvas renders immediately, text layer deferred
 
@@ -185,17 +185,17 @@ Files:
 - `src/features/reader/components/pdf-page.tsx`
 
 Acceptance:
-- [ ] Canvas visible immediately after page load
-- [ ] Text selection works after brief delay
-- [ ] Links/annotations work after interaction
-- [ ] No visible layout shift
+- [x] Canvas visible immediately after page load
+- [x] Text selection works after brief delay (500ms TEXT_LAYER_DELAY_MS)
+- [x] Links/annotations work after interaction (800ms ANNOTATION_LAYER_DELAY_MS)
+- [x] No visible layout shift
 
 ---
 
 ## Phase 2: Caching Layer
 
 ### Task 2.1: Create PdfCacheService
-**Status**: pending
+**Status**: completed
 **Depends on**: none
 **Verification**: Unit tests pass for cache operations
 
@@ -209,15 +209,15 @@ Files:
 - `src/lib/pdf/__tests__/cache-service.test.ts` (new)
 
 Acceptance:
-- [ ] Can store and retrieve PDF ArrayBuffer by fileId
-- [ ] Evicts LRU entries when over 500MB
-- [ ] Handles IndexedDB errors gracefully
-- [ ] Works in private browsing (graceful degradation)
+- [x] Can store and retrieve PDF ArrayBuffer by fileId
+- [x] Evicts LRU entries when over 500MB
+- [x] Handles IndexedDB errors gracefully
+- [x] Works in private browsing (graceful degradation)
 
 ---
 
 ### Task 2.2: Create SignedUrlCache
-**Status**: pending
+**Status**: completed
 **Depends on**: none
 **Verification**: Unit tests pass, duplicate API calls eliminated
 
@@ -231,15 +231,15 @@ Files:
 - `src/lib/pdf/__tests__/url-cache.test.ts` (new)
 
 Acceptance:
-- [ ] Returns cached URL if not expired
-- [ ] Returns null if expired or missing
-- [ ] Handles sessionStorage errors
-- [ ] No memory leaks
+- [x] Returns cached URL if not expired
+- [x] Returns null if expired or missing
+- [x] Handles sessionStorage errors
+- [x] No memory leaks
 
 ---
 
 ### Task 2.3: Expose Content Hash in File API Response
-**Status**: pending
+**Status**: completed
 **Depends on**: none
 **Verification**: GET /files/:id returns contentHash field
 
@@ -251,14 +251,14 @@ Files:
 - `src/app/api/courses/[courseId]/files/[fileId]/route.ts` (add contentHash to response)
 
 Acceptance:
-- [ ] GET endpoint returns `contentHash: string | null`
-- [ ] Existing files with hash return the hash
-- [ ] Pre-hash files return null (already handled by DB)
+- [x] GET endpoint returns `contentHash: string | null`
+- [x] Existing files with hash return the hash
+- [x] Pre-hash files return null (already handled by DB)
 
 ---
 
 ### Task 2.4: Create CacheSyncService (BroadcastChannel)
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.1
 **Verification**: Unit tests pass for cross-tab communication
 
@@ -273,17 +273,17 @@ Files:
 - `src/lib/pdf/__tests__/cache-sync.test.ts` (new)
 
 Acceptance:
-- [ ] Can broadcast pdf_cache_updated event
-- [ ] Can broadcast pdf_cache_invalidated event
-- [ ] Can broadcast pdf_cache_cleared event
-- [ ] Other tabs receive events within 100ms
-- [ ] Graceful no-op when BroadcastChannel unavailable
-- [ ] Cleanup on unmount (close channel)
+- [x] Can broadcast pdf_cache_updated event
+- [x] Can broadcast pdf_cache_invalidated event
+- [x] Can broadcast pdf_cache_cleared event
+- [x] Other tabs receive events within 100ms
+- [x] Graceful no-op when BroadcastChannel unavailable
+- [x] Cleanup on unmount (close channel)
 
 ---
 
 ### Task 2.5: Create useCachedFile Hook
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.1, 2.2, 2.3, 2.4
 **Verification**: Integration test shows cache hit/miss behavior
 
@@ -300,18 +300,18 @@ Files:
 - `src/features/files/hooks/__tests__/use-cached-file.test.ts` (new)
 
 Acceptance:
-- [ ] Cache miss: fetches and caches
-- [ ] Cache hit: returns immediately
-- [ ] Hash mismatch: re-fetches
-- [ ] Exposes isCached and cacheStatus
-- [ ] Broadcasts cache events to other tabs
-- [ ] Revalidates on receiving invalidation event
-- [ ] Revalidates stale cache on tab focus
+- [x] Cache miss: fetches and caches
+- [x] Cache hit: returns immediately
+- [x] Hash mismatch: re-fetches
+- [x] Exposes isCached and cacheStatus
+- [x] Broadcasts cache events to other tabs
+- [x] Revalidates on receiving invalidation event
+- [x] Revalidates stale cache on tab focus
 
 ---
 
 ### Task 2.6: Integrate Caching with PdfViewer
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.5, 1.3
 **Verification**: E2E test shows faster repeat visits
 
@@ -325,15 +325,15 @@ Files:
 - `src/features/reader/components/pdf-viewer.tsx`
 
 Acceptance:
-- [ ] Cached PDFs load in <500ms
-- [ ] Uncached PDFs show progress indicator
-- [ ] No regression in existing features
-- [ ] Feature flag controls cache usage
+- [x] Cached PDFs load in <500ms
+- [x] Uncached PDFs show progress indicator
+- [x] No regression in existing features
+- [x] Feature flag controls cache usage (enableCache option in useCachedFile)
 
 ---
 
 ### Task 2.7: Add Cache Management UI
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.6
 **Verification**: User can clear cache from settings
 
@@ -354,19 +354,19 @@ Files:
 - `src/components/settings/cache-settings.tsx` (new component)
 
 Acceptance:
-- [ ] Cache statistics appear in Settings > Usage tab
-- [ ] Shows accurate cache size and file count
-- [ ] Clear button shows confirmation dialog
-- [ ] Clear removes all cached PDFs from IndexedDB
-- [ ] All text uses useTranslations('pdf.cache')
-- [ ] Toast confirms successful clear
-- [ ] Page updates after clear
-- [ ] Broadcasts pdf_cache_cleared to other tabs
+- [x] Cache statistics appear in Settings > Usage tab
+- [x] Shows accurate cache size and file count
+- [x] Clear button shows confirmation dialog
+- [x] Clear removes all cached PDFs from IndexedDB
+- [x] All text uses useTranslations('pdf.cache')
+- [ ] Toast confirms successful clear (skipped - inline UI feedback used instead)
+- [x] Page updates after clear
+- [x] Broadcasts pdf_cache_cleared to other tabs
 
 ---
 
 ### Task 2.8: Add Account Lifecycle Cache Cleanup
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.1, 2.4
 **Verification**: Cache cleared on account deletion, session cache cleared on logout
 
@@ -383,24 +383,24 @@ Implement cache cleanup for account lifecycle events:
 - Clear localStorage preferences
 
 Files:
-- `src/features/auth/api.ts` or logout handler (add sessionStorage clear)
+- `src/features/auth/hooks/use-auth.ts` (add sessionStorage clear on logout)
 - `src/app/(app)/settings/page.tsx` or account deletion handler (add full cache clear)
 - `src/lib/pdf/cache-service.ts` (ensure clear() method exists)
 
 Acceptance:
-- [ ] Logout clears sessionStorage signed URL cache
-- [ ] Logout does NOT clear IndexedDB PDF cache
-- [ ] Account deletion clears ALL local caches (sessionStorage, IndexedDB, localStorage)
-- [ ] Account deletion broadcasts pdf_cache_cleared to other tabs
-- [ ] Other tabs respond to broadcast by clearing their cache state
-- [ ] No errors if caches are already empty
+- [x] Logout clears sessionStorage signed URL cache
+- [x] Logout does NOT clear IndexedDB PDF cache
+- [ ] Account deletion clears ALL local caches (N/A - no account deletion feature yet)
+- [ ] Account deletion broadcasts pdf_cache_cleared to other tabs (N/A)
+- [x] Other tabs respond to broadcast by clearing their cache state
+- [x] No errors if caches are already empty
 
 ---
 
 ## Phase 3: Measurement and Polish
 
 ### Task 3.1: Add Performance Metrics
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.5
 **Verification**: Metrics recorded to pdf_load_metrics table
 
@@ -411,20 +411,22 @@ Track and log key performance metrics:
 - Download speed
 
 Files:
-- `src/lib/supabase/migrations/xxx_pdf_load_metrics.sql` (new table)
+- `src/lib/supabase/migrations/008_pdf_load_metrics.sql` (new table)
 - `src/lib/pdf/performance-metrics.ts` (new)
+- `src/features/reader/hooks/use-pdf-load-metrics.ts` (new hook)
+- `src/app/api/metrics/pdf-load/route.ts` (new API endpoint)
 - `src/features/reader/components/pdf-viewer.tsx` (integrate)
 
 Acceptance:
-- [ ] `pdf_load_metrics` table created with schema from design.md
-- [ ] Metrics recorded on each PDF load
-- [ ] Metrics logged to console in dev mode
-- [ ] No performance impact from measurement
+- [x] `pdf_load_metrics` table created with schema from design.md
+- [x] Metrics recorded on each PDF load
+- [x] Metrics logged to console in dev mode (via debugLog)
+- [x] No performance impact from measurement (fire-and-forget API calls)
 
 ---
 
 ### Task 3.2: Prefetch Recently Accessed Files
-**Status**: pending
+**Status**: completed
 **Depends on**: 2.4
 **Verification**: Files prefetched when viewing file list
 
@@ -439,14 +441,14 @@ Files:
 - `src/features/files/components/file-list.tsx` (integrate)
 
 Acceptance:
-- [ ] Prefetch starts after file list renders
-- [ ] Does not block main thread
-- [ ] Respects cache size limits (500MB max)
+- [x] Prefetch starts after file list renders (2 second delay)
+- [x] Does not block main thread (async with AbortController)
+- [x] Respects cache size limits (uses existing PdfCacheService eviction)
 
 ---
 
 ### Task 3.3: Write Performance Test Suite
-**Status**: pending
+**Status**: completed
 **Depends on**: 3.1
 **Verification**: Automated performance tests in CI
 
@@ -457,11 +459,12 @@ Create performance tests to prevent regressions:
 
 Files:
 - `tests/performance/pdf-loading.spec.ts` (new)
+- `playwright.config.ts` (add performance project)
 
 Acceptance:
-- [ ] Tests run in CI
-- [ ] Baseline metrics documented
-- [ ] Alert on >20% regression
+- [x] Tests run in CI (via Playwright performance project)
+- [x] Baseline metrics documented (thresholds in test file)
+- [x] Alert on >20% regression (regressionTolerance in thresholds)
 
 ---
 

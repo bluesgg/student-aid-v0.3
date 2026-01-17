@@ -7,6 +7,7 @@ import { TokenUsageChart } from '@/features/usage/components/token-usage-chart'
 import { CostBreakdown } from '@/features/usage/components/cost-breakdown'
 import { EstimatedMonthlyCost } from '@/features/usage/components/estimated-monthly-cost'
 import { ResetDateDisplay } from '@/features/usage/components/reset-date-display'
+import { CacheSettings } from './cache-settings'
 
 // Default limits per bucket (should match API defaults)
 function getDefaultLimit(bucket: string): number {
@@ -104,6 +105,9 @@ export function UsageTab() {
 
           {/* Quota overview */}
           <QuotaOverview quotas={quotas} />
+
+          {/* PDF Cache settings */}
+          <CacheSettings />
         </div>
       </div>
 

@@ -4,7 +4,7 @@ import { useCallback, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCourse } from '@/features/courses/hooks/use-courses'
-import { useFile } from '@/features/files/hooks/use-files'
+import { useCachedFile } from '@/features/files/hooks/use-cached-file'
 import { ResizableLayout } from '@/features/layout/components/resizable-layout'
 import { PdfViewer } from '@/features/reader/components/pdf-viewer'
 import { StickerPanel } from '@/features/stickers/components/sticker-panel'
@@ -15,6 +15,7 @@ import { ImageExtractionToast } from '@/features/reader/components/image-extract
 import { HoverHighlightProvider } from '@/features/stickers/context'
 import type { PdfType } from '@/features/stickers/api'
 import { debugLog } from '@/lib/debug'
+import { useExplainLocale } from '@/features/user/hooks/use-user-preferences'
 
 export default function StudyPage() {
   const params = useParams()
@@ -23,7 +24,15 @@ export default function StudyPage() {
   const fileId = params.fileId as string
 
   const { data: course, isLoading: courseLoading } = useCourse(courseId)
-  const { data: file, isLoading: fileLoading, error: fileError } = useFile(courseId, fileId)
+  const {
+    file,
+    isLoading: fileLoading,
+    error: fileError,
+    pdfSource,
+    isCached,
+    cacheStatus,
+  } = useCachedFile(courseId, fileId)
+  const explainLocale = useExplainLocale()
 
   const isLoading = courseLoading || fileLoading
 
@@ -50,8 +59,10 @@ export default function StudyPage() {
       hasFile: !!file,
       downloadUrl: file?.downloadUrl ? 'exists' : 'missing',
       isLoading: fileLoading,
+      cacheStatus,
+      isCached,
     })
-  }, [file, fileId, fileLoading])
+  }, [file, fileId, fileLoading, cacheStatus, isCached])
 
   // Track current page for sticker panel
   const [currentPage, setCurrentPage] = useState(1)
@@ -98,9 +109,10 @@ export default function StudyPage() {
         selectedText: text,
         parentId: null,
         pdfType: file.type as PdfType,
+        locale: explainLocale,
       })
     },
-    [courseId, fileId, file, explainSelection]
+    [courseId, fileId, file, explainSelection, explainLocale]
   )
 
   // Handle start auto-explain session
@@ -121,14 +133,15 @@ export default function StudyPage() {
     }
 
     if (!file) return
+
     await startAutoExplainSession({
       courseId,
       fileId,
       page: currentPage,
       pdfType: file.type as PdfType,
-      locale: 'en',
+      locale: explainLocale,
     })
-  }, [hasSelectedRegions, startAutoExplainSession, courseId, fileId, currentPage, file, isAutoExplainActive, isAutoExplainStarting])
+  }, [hasSelectedRegions, startAutoExplainSession, courseId, fileId, currentPage, file, isAutoExplainActive, isAutoExplainStarting, explainLocale])
 
   // Loading state
   if (isLoading) {
@@ -265,6 +278,8 @@ export default function StudyPage() {
                   cancelAutoExplainSession={cancelAutoExplainSession}
                   onSelectedRegionsChange={handleSelectedRegionsChange}
                   triggerImageExplanation={triggerImageExplanation}
+                  pdfSource={pdfSource}
+                  isCached={isCached}
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-gray-500">

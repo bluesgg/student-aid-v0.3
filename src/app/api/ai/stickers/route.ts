@@ -49,22 +49,45 @@ export async function GET(request: NextRequest) {
 
     // Transform to API format
     const items = (stickers || []).map((s) => {
-      // Check if anchor_rect contains extended anchor structure (with anchors array)
-      const anchorRect = s.anchor_rect as { anchors?: unknown[]; x?: number; y?: number; width?: number; height?: number } | null
+      // anchor_rect can be:
+      // 1. Extended anchor with anchors array: { anchors: [...] }
+      // 2. PPT format with rect and isFullPage: { rect: {...}, isFullPage: true }
+      // 3. Legacy simple rect: { x, y, width, height }
+      const anchorRect = s.anchor_rect as {
+        anchors?: unknown[]
+        rect?: { x: number; y: number; width: number; height: number }
+        isFullPage?: boolean
+        x?: number
+        y?: number
+        width?: number
+        height?: number
+      } | null
+
       const hasExtendedAnchor = anchorRect?.anchors && Array.isArray(anchorRect.anchors)
+      const hasPptFormat = anchorRect?.rect && typeof anchorRect.rect === 'object'
 
       // Build anchor object
-      const anchor = hasExtendedAnchor
-        ? {
-            textSnippet: s.anchor_text,
-            rect: null,
-            anchors: anchorRect!.anchors,
-          }
-        : {
-            textSnippet: s.anchor_text,
-            // Legacy format: anchor_rect is a simple rect object
-            rect: anchorRect && 'x' in anchorRect ? anchorRect : null,
-          }
+      let anchor
+      if (hasExtendedAnchor) {
+        anchor = {
+          textSnippet: s.anchor_text,
+          rect: null,
+          anchors: anchorRect!.anchors,
+        }
+      } else if (hasPptFormat) {
+        // PPT format: { rect: {...}, isFullPage: true }
+        anchor = {
+          textSnippet: s.anchor_text,
+          rect: anchorRect!.rect,
+          isFullPage: anchorRect!.isFullPage,
+        }
+      } else {
+        // Legacy format: anchor_rect is a simple rect object
+        anchor = {
+          textSnippet: s.anchor_text,
+          rect: anchorRect && 'x' in anchorRect ? anchorRect : null,
+        }
+      }
 
       return {
         id: s.id,

@@ -4,6 +4,7 @@ import Link from 'next/link'
 import { useMemo } from 'react'
 import { useTranslations } from 'next-intl'
 import { useFiles, useDeleteFile } from '../hooks/use-files'
+import { usePrefetchFiles } from '../hooks/use-prefetch-files'
 import { useExtractionStatuses, type ExtractionStatusData } from '../hooks/use-extraction-status'
 import { ExtractionStatusBadge, ImageExtractionStatusBadge } from './extraction-status-badge'
 import type { CourseFile, FileType } from '../api'
@@ -148,6 +149,9 @@ export function FileList({ courseId }: FileListProps) {
 
   // Fetch and subscribe to extraction statuses
   const { getStatus } = useExtractionStatuses(fileIds, { fileNames })
+
+  // Prefetch first 3 files in background for faster loading
+  usePrefetchFiles(courseId, fileIds)
 
   const handleDelete = (file: CourseFile) => {
     if (confirm(t('confirmDeleteMessage', { name: file.name }))) {

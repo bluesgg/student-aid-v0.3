@@ -11,6 +11,7 @@ interface ExplainSelectionParams {
   selectedText: string
   parentId?: string | null
   pdfType: stickersApi.PdfType
+  locale?: string
 }
 
 interface UseExplainSelectionReturn {

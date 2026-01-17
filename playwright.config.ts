@@ -43,6 +43,21 @@ export default defineConfig({
       name: 'chromium',
       use: { ...devices['Desktop Chrome'] },
     },
+    // Performance tests - runs separately from E2E tests
+    {
+      name: 'performance',
+      testDir: './tests/performance',
+      testMatch: '**/*.spec.ts',
+      use: {
+        ...devices['Desktop Chrome'],
+        // Longer timeouts for performance tests
+        actionTimeout: 30000,
+        navigationTimeout: 60000,
+      },
+      // Run performance tests serially
+      fullyParallel: false,
+      retries: 0, // No retries for accurate measurements
+    },
     // Uncomment for multi-browser testing
     // {
     //   name: 'firefox',

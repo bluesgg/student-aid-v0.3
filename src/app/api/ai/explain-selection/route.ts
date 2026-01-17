@@ -17,6 +17,7 @@ import {
   type ContextRetrievalResult,
 } from '@/lib/context'
 import { z } from 'zod'
+import { getLocalizedSystemPrompt, getUserExplainLocale, type Locale } from '@/lib/user-preferences'
 
 const MAX_FOLLOW_UP_DEPTH = 10
 
@@ -27,6 +28,7 @@ const requestSchema = z.object({
   selectedText: z.string().min(1).max(5000),
   parentId: z.string().uuid().nullable().optional(),
   pdfType: z.enum(['Lecture', 'Homework', 'Exam', 'Other']),
+  locale: z.enum(['en', 'zh']).optional(),
 })
 
 /**
@@ -54,7 +56,10 @@ export async function POST(request: NextRequest) {
       return errors.invalidInput(parseResult.error.errors[0].message)
     }
 
-    const { courseId, fileId, page, selectedText, parentId, pdfType } = parseResult.data
+    const { courseId, fileId, page, selectedText, parentId, pdfType, locale: requestLocale } = parseResult.data
+
+    // Get locale - use request locale or fall back to user preference
+    const locale: Locale = requestLocale ?? await getUserExplainLocale(user.id)
 
     // Get file info
     const { data: file, error: fileError } = await supabase
@@ -168,10 +173,11 @@ export async function POST(request: NextRequest) {
           depth: 0,
         })
 
-    // Build system message with context enhancement
+    // Build system message with context enhancement and locale
     const baseSystemMessage =
       'You are an expert educational AI tutor. You help students understand complex academic material by providing clear, thorough explanations. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).'
-    const systemMessage = buildEnhancedSystemMessage(baseSystemMessage, contextResult)
+    const localizedSystemMessage = getLocalizedSystemPrompt(baseSystemMessage, locale)
+    const systemMessage = buildEnhancedSystemMessage(localizedSystemMessage, contextResult)
 
     // Call OpenAI with streaming
     const openai = getOpenAIClient()
