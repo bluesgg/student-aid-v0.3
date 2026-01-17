@@ -83,7 +83,7 @@ export function isIndexedDBAvailable(): boolean {
  */
 class PdfCacheServiceImpl {
   private db: IDBDatabase | null = null
-  private dbPromise: Promise<IDBDatabase> | null = null
+  private dbPromise: Promise<IDBDatabase | null> | null = null
   private isAvailable: boolean
 
   constructor() {
