@@ -8,6 +8,11 @@ const nextConfig = {
   // React strict mode for development
   reactStrictMode: true,
 
+  // Skip ESLint during builds - lint should run as a separate CI step
+  eslint: {
+    ignoreDuringBuilds: true,
+  },
+
   // Experimental features
   experimental: {
     // Enable server actions
