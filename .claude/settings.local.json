@@ -24,7 +24,13 @@
       "Bash(npx openspec:*)",
       "Bash(pnpm add:*)",
       "Bash(git push:*)",
-      "Bash(test:*)"
+      "Bash(test:*)",
+      "Bash(timeout /t 8 /nobreak)",
+      "Bash(git checkout:*)",
+      "Bash(cmd /c \"rmdir /s /q src\\\\lib\\\\auth\")",
+      "Bash(cmd /c \"rmdir /s /q src\\\\app\\\\api\\\\admin\\\\analytics\")",
+      "Bash(dir node_modulespdfjs-distbuild)",
+      "Bash(del \"e:\\\\cursor_project\\\\Student Aid-0.2\\\\src\\\\features\\\\stickers\\\\components\\\\typewriter-sticker.tsx\")"
     ],
     "additionalDirectories": [
       "e:\\cursor_project\\Student Aid-0.2\\openspec\\changes\\add-term-dropdown\\specs"

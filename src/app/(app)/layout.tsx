@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
 import { createClient } from '@/lib/supabase/server'
+import { LanguageModalTrigger } from '@/components/language-modal-trigger'
 
 export default async function AppLayout({
   children,
@@ -16,5 +17,10 @@ export default async function AppLayout({
     redirect('/login')
   }
 
-  return <>{children}</>
+  return (
+    <>
+      {children}
+      <LanguageModalTrigger />
+    </>
+  )
 }

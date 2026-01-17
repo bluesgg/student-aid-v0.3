@@ -69,10 +69,10 @@ export async function checkSharedCache(
   // Use admin client to bypass RLS
   const supabase = createAdminClient()
 
-  // Build query
+  // Build query - include chunk_plan for selectedImageRegions retrieval
   let query = supabase
     .from('shared_auto_stickers')
-    .select('id, status, stickers, image_summaries')
+    .select('id, status, stickers, image_summaries, chunk_plan')
     .eq('pdf_hash', pdfHash)
     .eq('page', page)
     .eq('prompt_version', PROMPT_VERSION)
@@ -102,11 +102,16 @@ export async function checkSharedCache(
       .update({ last_accessed_at: new Date().toISOString() })
       .eq('id', data.id)
 
+    // Extract selectedImageRegions from chunk_plan if present
+    const chunkPlan = data.chunk_plan as { selectedImageRegions?: unknown[] } | null
+    const selectedImageRegions = chunkPlan?.selectedImageRegions as CacheLookupResult['selectedImageRegions']
+
     return {
       status: 'ready',
       stickers: data.stickers as unknown[],
       generationId: data.id,
       imageSummaries: data.image_summaries,
+      selectedImageRegions,
     }
   }
 
@@ -135,6 +140,8 @@ export async function tryStartGeneration(params: {
   imagesCount?: number
   estimatedChunks?: number
   selectionHash?: string | null
+  /** Selected image regions for with_selected_images mode (stored in chunk_plan for later retrieval) */
+  selectedImageRegions?: Array<{ page: number; rect: { x: number; y: number; width: number; height: number } }>
 }): Promise<StartGenerationResult> {
   const {
     pdfHash,
@@ -146,6 +153,7 @@ export async function tryStartGeneration(params: {
     imagesCount = 0,
     estimatedChunks = 1,
     selectionHash = null,
+    selectedImageRegions = null,
   } = params
 
   // Use admin client to bypass RLS
@@ -161,6 +169,7 @@ export async function tryStartGeneration(params: {
   try {
     // Attempt to insert new generation job
     // Unique constraint will reject if another job exists for same cache key
+    // For with_selected_images mode, store selectedImageRegions in chunk_plan for later retrieval
     const { error: insertError } = await supabase.from('shared_auto_stickers').insert({
       id: generationId,
       pdf_hash: pdfHash,
@@ -173,6 +182,7 @@ export async function tryStartGeneration(params: {
       run_after: new Date().toISOString(),
       attempts: 0,
       selection_hash: selectionHash,
+      chunk_plan: selectedImageRegions ? { selectedImageRegions } : null,
     })
 
     if (insertError) {
@@ -227,7 +237,7 @@ export async function getGenerationStatus(generationId: string): Promise<Generat
 
   const { data, error } = await supabase
     .from('shared_auto_stickers')
-    .select('status, stickers, last_error, generation_time_ms')
+    .select('status, stickers, last_error, generation_time_ms, chunk_plan')
     .eq('id', generationId)
     .single()
 
@@ -238,11 +248,16 @@ export async function getGenerationStatus(generationId: string): Promise<Generat
     }
   }
 
+  // Extract selectedImageRegions from chunk_plan if present
+  const chunkPlan = data.chunk_plan as { selectedImageRegions?: unknown[] } | null
+  const selectedImageRegions = chunkPlan?.selectedImageRegions as GenerationStatusResult['selectedImageRegions']
+
   return {
     status: data.status as StickerStatus,
     stickers: data.status === 'ready' ? (data.stickers as unknown[]) : undefined,
     error: data.status === 'failed' ? data.last_error || 'Generation failed' : undefined,
     generationTimeMs: data.generation_time_ms || undefined,
+    selectedImageRegions,
   }
 }
 

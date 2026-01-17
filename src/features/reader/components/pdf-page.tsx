@@ -14,10 +14,18 @@ interface PdfPageProps {
   onCanvasReady?: (pageNumber: number, canvas: HTMLCanvasElement) => void
   /** Callback when canvas is unmounted */
   onCanvasUnmount?: (pageNumber: number) => void
+  /** Whether to enable lazy layer rendering (default: true) */
+  lazyLayers?: boolean
 }
 
 /** Timeout for canvas registration (5 seconds) */
 const CANVAS_REGISTRATION_TIMEOUT = 5000
+
+/** Delay before rendering text layer (ms) */
+const TEXT_LAYER_DELAY_MS = 500
+
+/** Delay before rendering annotation layer (ms) */
+const ANNOTATION_LAYER_DELAY_MS = 800
 
 function PdfPageComponent({
   pageNumber,
@@ -27,8 +35,11 @@ function PdfPageComponent({
   onPageRender,
   onCanvasReady,
   onCanvasUnmount,
+  lazyLayers = true,
 }: PdfPageProps) {
   const [isLoading, setIsLoading] = useState(true)
+  const [renderTextLayer, setRenderTextLayer] = useState(!lazyLayers)
+  const [renderAnnotationLayer, setRenderAnnotationLayer] = useState(!lazyLayers)
   const containerRef = useRef<HTMLDivElement>(null)
   const registeredRef = useRef(false)
 
@@ -102,6 +113,42 @@ function PdfPageComponent({
     }
   }, [pageNumber, onCanvasUnmount])
 
+  // Lazy text layer rendering - enable after canvas is stable
+  useEffect(() => {
+    if (!lazyLayers || renderTextLayer) return
+
+    // Use requestIdleCallback if available, otherwise setTimeout
+    if ('requestIdleCallback' in window) {
+      const idleId = (window as Window & typeof globalThis & { requestIdleCallback: (cb: () => void) => number }).requestIdleCallback(
+        () => {
+          setRenderTextLayer(true)
+        },
+        { timeout: TEXT_LAYER_DELAY_MS }
+      )
+      return () => {
+        if ('cancelIdleCallback' in window) {
+          (window as Window & typeof globalThis & { cancelIdleCallback: (id: number) => void }).cancelIdleCallback(idleId)
+        }
+      }
+    } else {
+      const timeoutId = setTimeout(() => {
+        setRenderTextLayer(true)
+      }, TEXT_LAYER_DELAY_MS)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [lazyLayers, renderTextLayer])
+
+  // Lazy annotation layer rendering - enable after text layer
+  useEffect(() => {
+    if (!lazyLayers || renderAnnotationLayer || !renderTextLayer) return
+
+    const timeoutId = setTimeout(() => {
+      setRenderAnnotationLayer(true)
+    }, ANNOTATION_LAYER_DELAY_MS - TEXT_LAYER_DELAY_MS)
+
+    return () => clearTimeout(timeoutId)
+  }, [lazyLayers, renderAnnotationLayer, renderTextLayer])
+
   return (
     <div
       ref={containerRef}
@@ -117,8 +164,8 @@ function PdfPageComponent({
         pageNumber={pageNumber}
         scale={scale}
         width={width}
-        renderTextLayer={true}
-        renderAnnotationLayer={true}
+        renderTextLayer={renderTextLayer}
+        renderAnnotationLayer={renderAnnotationLayer}
         onRenderSuccess={handleRenderSuccess}
         loading={null}
         className="shadow-lg"

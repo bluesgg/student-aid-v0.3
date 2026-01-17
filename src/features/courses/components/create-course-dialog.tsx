@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useCreateCourse } from '../hooks/use-courses'
 import { getCurrentTerm, getTermOptions } from '@/lib/terms'
 
@@ -10,6 +11,9 @@ interface CreateCourseDialogProps {
 }
 
 export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps) {
+  const t = useTranslations('courses')
+  const tCommon = useTranslations('common')
+
   const [name, setName] = useState('')
   const [school, setSchool] = useState('')
   const [term, setTerm] = useState(getCurrentTerm())
@@ -41,7 +45,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
         onClick={onClose}
       />
       <div className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-        <h2 className="text-xl font-bold mb-4">New course</h2>
+        <h2 className="text-xl font-bold mb-4">{t('newCourse')}</h2>
 
         {createCourse.error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -55,7 +59,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               htmlFor="name"
               className="block text-sm font-medium text-secondary-700 mb-1"
             >
-              Course name
+              {t('name')}
             </label>
             <input
               id="name"
@@ -63,7 +67,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               value={name}
               onChange={(e) => setName(e.target.value)}
               className="input"
-              placeholder="e.g., Calculus I"
+              placeholder={t('namePlaceholder')}
               required
               autoFocus
             />
@@ -74,7 +78,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               htmlFor="school"
               className="block text-sm font-medium text-secondary-700 mb-1"
             >
-              School
+              {t('school')}
             </label>
             <input
               id="school"
@@ -82,7 +86,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               value={school}
               onChange={(e) => setSchool(e.target.value)}
               className="input"
-              placeholder="e.g., ABC University"
+              placeholder={t('schoolPlaceholder')}
               required
             />
           </div>
@@ -92,7 +96,7 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               htmlFor="term"
               className="block text-sm font-medium text-secondary-700 mb-1"
             >
-              Term
+              {t('term')}
             </label>
             <select
               id="term"
@@ -116,14 +120,14 @@ export function CreateCourseDialog({ isOpen, onClose }: CreateCourseDialogProps)
               className="btn-secondary flex-1"
               disabled={createCourse.isPending}
             >
-              Cancel
+              {tCommon('cancel')}
             </button>
             <button
               type="submit"
               className="btn-primary flex-1"
               disabled={createCourse.isPending}
             >
-              {createCourse.isPending ? 'Creating...' : 'Create'}
+              {createCourse.isPending ? t('creating') : tCommon('create')}
             </button>
           </div>
         </form>

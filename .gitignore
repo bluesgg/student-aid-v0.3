@@ -43,3 +43,9 @@ next-env.d.ts
 *.log
 *.pem
 Thumbs.db
+
+# Temporary Claude files
+tmpclaude-*
+nul
+*utputFormat
+validation-output.txt

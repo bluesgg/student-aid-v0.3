@@ -1,6 +1,7 @@
 'use client'
 
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface TokenUsageChartProps {
   totalInput: number
@@ -19,14 +20,15 @@ function formatNumber(num: number): string {
 }
 
 function TokenUsageChartComponent({ totalInput, totalOutput, total }: TokenUsageChartProps) {
+  const t = useTranslations('usage')
   const inputPercentage = total > 0 ? (totalInput / total) * 100 : 50
   const outputPercentage = total > 0 ? (totalOutput / total) * 100 : 50
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4">
       <div className="flex items-center justify-between mb-4">
-        <h3 className="text-sm font-semibold text-gray-900">Token Usage</h3>
-        <span className="text-lg font-bold text-gray-900">{formatNumber(total)} total</span>
+        <h3 className="text-sm font-semibold text-gray-900">{t('tokenUsage')}</h3>
+        <span className="text-lg font-bold text-gray-900">{formatNumber(total)} {t('total')}</span>
       </div>
 
       {/* Bar chart */}
@@ -55,14 +57,14 @@ function TokenUsageChartComponent({ totalInput, totalOutput, total }: TokenUsage
           <div className="w-3 h-3 bg-blue-500 rounded-full" />
           <div>
             <p className="text-sm font-medium text-gray-900">{formatNumber(totalInput)}</p>
-            <p className="text-xs text-gray-500">Input tokens</p>
+            <p className="text-xs text-gray-500">{t('inputTokens')}</p>
           </div>
         </div>
         <div className="flex items-center gap-3">
           <div className="w-3 h-3 bg-indigo-500 rounded-full" />
           <div>
             <p className="text-sm font-medium text-gray-900">{formatNumber(totalOutput)}</p>
-            <p className="text-xs text-gray-500">Output tokens</p>
+            <p className="text-xs text-gray-500">{t('outputTokens')}</p>
           </div>
         </div>
       </div>
@@ -70,8 +72,7 @@ function TokenUsageChartComponent({ totalInput, totalOutput, total }: TokenUsage
       {/* Info */}
       <div className="mt-4 pt-3 border-t border-gray-100">
         <p className="text-xs text-gray-500">
-          Input tokens are from prompts (your questions + document context). Output tokens are from
-          AI responses. Output tokens typically cost more per token.
+          {t('tokenInfo')}
         </p>
       </div>
     </div>

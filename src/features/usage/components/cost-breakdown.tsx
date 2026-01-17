@@ -1,6 +1,7 @@
 'use client'
 
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface OperationCost {
   bucket: string
@@ -18,13 +19,7 @@ interface CostBreakdownProps {
   totalCost: number
 }
 
-const BUCKET_LABELS: Record<string, string> = {
-  autoExplain: 'Auto Explain (Stickers)',
-  learningInteractions: 'Q&A & Selection Explain',
-  documentSummary: 'Document Summaries',
-  sectionSummary: 'Section Summaries',
-  courseSummary: 'Course Outlines',
-}
+type BucketKey = 'autoExplain' | 'learningInteractions' | 'documentSummary' | 'sectionSummary' | 'courseSummary'
 
 const BUCKET_ICONS: Record<string, React.ReactNode> = {
   autoExplain: (
@@ -97,6 +92,17 @@ function formatNumber(num: number): string {
 }
 
 function CostBreakdownComponent({ operations, totalCost }: CostBreakdownProps) {
+  const t = useTranslations('usage')
+
+  const getBucketLabel = (bucket: string): string => {
+    const key = bucket as BucketKey
+    try {
+      return t(`buckets.${key}`)
+    } catch {
+      return bucket
+    }
+  }
+
   if (operations.length === 0) {
     return (
       <div className="bg-white rounded-lg border border-gray-200 p-6 text-center">
@@ -113,7 +119,7 @@ function CostBreakdownComponent({ operations, totalCost }: CostBreakdownProps) {
             d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
           />
         </svg>
-        <p className="mt-2 text-sm text-gray-500">No usage data yet</p>
+        <p className="mt-2 text-sm text-gray-500">{t('noData')}</p>
       </div>
     )
   }
@@ -121,7 +127,7 @@ function CostBreakdownComponent({ operations, totalCost }: CostBreakdownProps) {
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
-        <h3 className="text-sm font-semibold text-gray-900">Cost Breakdown by Operation</h3>
+        <h3 className="text-sm font-semibold text-gray-900">{t('costBreakdownByOp')}</h3>
       </div>
 
       <div className="divide-y divide-gray-100">
@@ -137,21 +143,21 @@ function CostBreakdownComponent({ operations, totalCost }: CostBreakdownProps) {
                   </div>
                   <div>
                     <h4 className="text-sm font-medium text-gray-900">
-                      {BUCKET_LABELS[op.bucket] || op.bucket}
+                      {getBucketLabel(op.bucket)}
                     </h4>
                     <p className="text-xs text-gray-500 mt-0.5">{op.description}</p>
                     <div className="flex items-center gap-3 mt-2 text-xs text-gray-500">
-                      <span>{op.used} operations</span>
+                      <span>{op.used} {t('operations')}</span>
                       <span>·</span>
                       <span>{formatCost(op.costPerOperation)}/op</span>
                       <span>·</span>
-                      <span>~{formatNumber(op.avgInputTokens + op.avgOutputTokens)} tokens/op</span>
+                      <span>~{formatNumber(op.avgInputTokens + op.avgOutputTokens)} {t('tokensPerOp')}</span>
                     </div>
                   </div>
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-semibold text-gray-900">{formatCost(op.totalCost)}</p>
-                  <p className="text-xs text-gray-500">{percentage.toFixed(1)}% of total</p>
+                  <p className="text-xs text-gray-500">{percentage.toFixed(1)}% {t('ofTotal')}</p>
                 </div>
               </div>
 
@@ -169,7 +175,7 @@ function CostBreakdownComponent({ operations, totalCost }: CostBreakdownProps) {
 
       <div className="px-4 py-3 bg-gray-50 border-t border-gray-200">
         <div className="flex items-center justify-between">
-          <span className="text-sm font-medium text-gray-700">Total Cost This Period</span>
+          <span className="text-sm font-medium text-gray-700">{t('totalCostPeriod')}</span>
           <span className="text-lg font-semibold text-gray-900">{formatCost(totalCost)}</span>
         </div>
       </div>

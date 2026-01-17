@@ -11,9 +11,9 @@ interface LayoutPreferences {
 }
 
 const DEFAULT_PREFERENCES: LayoutPreferences = {
-  pdfPanelSize: 40, // 40% for PDF viewer
-  stickerPanelSize: 30, // 30% for stickers
-  qaPanelSize: 30, // 30% for Q&A
+  pdfPanelSize: 25, // 25% for PDF viewer (left)
+  stickerPanelSize: 50, // 50% for AI explanations (center)
+  qaPanelSize: 25, // 25% for Q&A (right)
 }
 
 // Min and max constraints (as percentages)

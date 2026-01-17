@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useTranslations, useLocale } from 'next-intl'
 import type { Course } from '../api'
 
 interface CourseCardProps {
@@ -9,9 +10,12 @@ interface CourseCardProps {
 }
 
 export function CourseCard({ course, onDelete }: CourseCardProps) {
+  const t = useTranslations('courses')
+  const locale = useLocale()
+
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Never visited'
-    return new Date(dateString).toLocaleDateString('en-US', {
+    if (!dateString) return t('neverVisited')
+    return new Date(dateString).toLocaleDateString(locale === 'zh' ? 'zh-CN' : 'en-US', {
       month: 'short',
       day: 'numeric',
       year: 'numeric',
@@ -29,7 +33,7 @@ export function CourseCard({ course, onDelete }: CourseCardProps) {
         </p>
         <div className="flex items-center justify-between mt-4 text-sm text-secondary-500">
           <span>
-            {course.fileCount} {course.fileCount === 1 ? 'file' : 'files'}
+            {course.fileCount} {course.fileCount === 1 ? t('file') : t('filesCount')}
           </span>
           <span>{formatDate(course.lastVisitedAt)}</span>
         </div>
@@ -41,7 +45,7 @@ export function CourseCard({ course, onDelete }: CourseCardProps) {
             onDelete(course)
           }}
           className="absolute top-3 right-3 p-1 text-secondary-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-          title="Delete course"
+          title={t('deleteCourse')}
         >
           <svg
             className="w-5 h-5"

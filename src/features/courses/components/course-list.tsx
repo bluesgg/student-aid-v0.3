@@ -1,6 +1,7 @@
 'use client'
 
 import { useState } from 'react'
+import { useTranslations } from 'next-intl'
 import { useCourses } from '../hooks/use-courses'
 import { CourseCard } from './course-card'
 import { CreateCourseDialog } from './create-course-dialog'
@@ -10,6 +11,10 @@ import type { Course } from '../api'
 const MAX_COURSES = 6
 
 export function CourseList() {
+  const t = useTranslations('courses')
+  const tCommon = useTranslations('common')
+  const tErrors = useTranslations('errors')
+
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [courseToDelete, setCourseToDelete] = useState<Course | null>(null)
 
@@ -28,7 +33,7 @@ export function CourseList() {
   if (error) {
     return (
       <div className="text-center py-12">
-        <p className="text-red-600">Failed to load courses. Please try again.</p>
+        <p className="text-red-600">{tErrors('serverError')}</p>
       </div>
     )
   }
@@ -36,18 +41,13 @@ export function CourseList() {
   return (
     <>
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-secondary-900">My Courses</h1>
+        <h1 className="text-2xl font-bold text-secondary-900">{t('title')}</h1>
         <button
           onClick={() => setShowCreateDialog(true)}
           disabled={!canCreateCourse}
           className="btn-primary"
-          title={
-            canCreateCourse
-              ? 'Create new course'
-              : `For this experiment, you can create up to ${MAX_COURSES} courses.`
-          }
         >
-          New course
+          {t('create')}
         </button>
       </div>
 
@@ -69,13 +69,13 @@ export function CourseList() {
             </svg>
           </div>
           <p className="text-secondary-600 mb-4">
-            You don&apos;t have any courses yet.
+            {t('empty')}
           </p>
           <button
             onClick={() => setShowCreateDialog(true)}
             className="btn-primary"
           >
-            Create your first course
+            {tCommon('create')}
           </button>
         </div>
       ) : (

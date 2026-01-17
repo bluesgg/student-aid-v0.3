@@ -1,6 +1,7 @@
 'use client'
 
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 
 interface EstimatedMonthlyCostProps {
   currentCost: number
@@ -21,6 +22,8 @@ function EstimatedMonthlyCostComponent({
   daysElapsed,
   daysRemaining,
 }: EstimatedMonthlyCostProps) {
+  const t = useTranslations('usage')
+
   const getWarningStyles = () => {
     switch (warningLevel) {
       case 'danger':
@@ -55,11 +58,22 @@ function EstimatedMonthlyCostComponent({
   const getStatusMessage = () => {
     switch (warningLevel) {
       case 'danger':
-        return 'High usage - consider reducing AI operations'
+        return t('statusDanger')
       case 'warning':
-        return 'Moderate usage - monitor your spending'
+        return t('statusWarning')
       default:
-        return 'Usage on track'
+        return t('statusNormal')
+    }
+  }
+
+  const getLevelLabel = () => {
+    switch (warningLevel) {
+      case 'danger':
+        return t('levelDanger')
+      case 'warning':
+        return t('levelWarning')
+      default:
+        return t('levelNormal')
     }
   }
 
@@ -68,28 +82,26 @@ function EstimatedMonthlyCostComponent({
       <div className="p-4">
         <div className="flex items-start justify-between">
           <div>
-            <h3 className="text-sm font-semibold text-gray-900">Estimated Monthly Cost</h3>
+            <h3 className="text-sm font-semibold text-gray-900">{t('estimatedCost')}</h3>
             <p className="text-xs text-gray-500 mt-0.5">
-              Based on {daysElapsed} days of usage
+              {t('basedOnDays', { days: daysElapsed })}
             </p>
           </div>
           <div className={`px-2 py-1 rounded-full text-xs font-medium ${styles.badge}`}>
-            {warningLevel === 'danger' && 'High'}
-            {warningLevel === 'warning' && 'Moderate'}
-            {warningLevel === 'normal' && 'Normal'}
+            {getLevelLabel()}
           </div>
         </div>
 
         <div className="mt-4 grid grid-cols-2 gap-4">
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Current Period</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">{t('currentPeriod')}</p>
             <p className="text-2xl font-bold text-gray-900 mt-1">{currentCostFormatted}</p>
-            <p className="text-xs text-gray-500 mt-0.5">Actual spend</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t('actualSpend')}</p>
           </div>
           <div>
-            <p className="text-xs text-gray-500 uppercase tracking-wide">Projected</p>
+            <p className="text-xs text-gray-500 uppercase tracking-wide">{t('projected')}</p>
             <p className={`text-2xl font-bold ${styles.text} mt-1`}>{projectedCostFormatted}</p>
-            <p className="text-xs text-gray-500 mt-0.5">If pace continues</p>
+            <p className="text-xs text-gray-500 mt-0.5">{t('ifPaceContinues')}</p>
           </div>
         </div>
       </div>

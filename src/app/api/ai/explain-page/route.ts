@@ -25,6 +25,19 @@ import {
   buildContextHint,
   getContextSummary,
 } from '@/lib/context'
+import {
+  startSession,
+  getPagesToGenerate,
+  updateSessionProgress,
+  completeSession,
+  type WindowState,
+} from '@/lib/auto-explain'
+import {
+  generatePptPdfStickers,
+  generateTextPdfStickers,
+} from '@/lib/auto-explain'
+import { getOrDetectPdfType, type PdfType } from '@/lib/pdf/type-detector'
+import { isFeatureEnabled } from '@/lib/feature-flags'
 import { z } from 'zod'
 
 // Required for multipart form data parsing with File handling
@@ -56,13 +69,14 @@ const textSelectionSchema = z.object({
   rect: normalizedRectSchema.nullable().optional(),
 }).optional()
 
-/** Legacy JSON request schema */
+/** Legacy JSON request schema (single page mode) */
 const requestSchema = z.object({
   courseId: z.string().uuid(),
   fileId: z.string().uuid(),
   page: z.number().int().positive(),
   pdfType: z.enum(['Lecture', 'Homework', 'Exam', 'Other']),
   locale: z.enum(['en', 'zh-Hans']).optional().default('en'),
+  mode: z.enum(['single', 'window']).optional().default('single'),
 })
 
 /** Multipart payload schema for with_selected_images mode */
@@ -174,6 +188,26 @@ export async function POST(request: NextRequest) {
       page = parseResult.data.page
       pdfType = parseResult.data.pdfType
       locale = parseResult.data.locale as 'en' | 'zh-Hans'
+
+      // Check for window mode (sliding window auto-explain)
+      if (parseResult.data.mode === 'window') {
+        // Check feature flag
+        if (!isFeatureEnabled('AUTO_EXPLAIN_WINDOW')) {
+          return errors.custom(
+            'FEATURE_DISABLED',
+            'Window mode is not enabled. Please use single page mode.',
+            400
+          )
+        }
+        return await handleWindowMode(supabase, {
+          user,
+          courseId,
+          fileId,
+          page,
+          pdfType,
+          locale,
+        })
+      }
     }
 
     // Get file info
@@ -256,20 +290,25 @@ export async function POST(request: NextRequest) {
         .single()
 
       return successResponse({
-        stickers: existingStickers.map((s) => ({
-          id: s.id,
-          type: s.type,
-          page: s.page,
-          anchor: {
-            textSnippet: s.anchor_text,
-            rect: s.anchor_rect,
-          },
-          parentId: s.parent_id,
-          contentMarkdown: s.content_markdown,
-          folded: s.folded,
-          depth: s.depth,
-          createdAt: s.created_at,
-        })),
+        stickers: existingStickers.map((s) => {
+          // anchor_rect may contain { rect, isFullPage } structure or just the rect
+          const anchorRect = s.anchor_rect as { rect?: { x: number; y: number; width: number; height: number }; isFullPage?: boolean } | null
+          return {
+            id: s.id,
+            type: s.type,
+            page: s.page,
+            anchor: {
+              textSnippet: s.anchor_text,
+              rect: anchorRect?.rect || anchorRect,
+              isFullPage: anchorRect?.isFullPage,
+            },
+            parentId: s.parent_id,
+            contentMarkdown: s.content_markdown,
+            folded: s.folded,
+            depth: s.depth,
+            createdAt: s.created_at,
+          }
+        }),
         quota: {
           autoExplain: {
             used: quotas?.used ?? 0,
@@ -353,11 +392,12 @@ export async function POST(request: NextRequest) {
             user.id,
             courseId,
             fileId,
-            page
+            page,
+            cacheResult.selectedImageRegions
           )
 
           return successResponse({
-            stickers: formatStickers(cacheResult.stickers),
+            stickers: formatStickers(cacheResult.stickers, cacheResult.selectedImageRegions),
             quota: {
               autoExplain: deductResult.quota,
             },
@@ -369,15 +409,14 @@ export async function POST(request: NextRequest) {
 
         if (cacheResult.status === 'generating' && cacheResult.generationId) {
           // Generation in progress - return 202 with generationId
-          return NextResponse.json(
+          return successResponse(
             {
-              ok: true,
               status: 'generating',
               generationId: cacheResult.generationId,
               message: 'Sticker generation in progress. Poll /api/ai/explain-page/status/:generationId for updates.',
               pollInterval: 2000,
             },
-            { status: 202 }
+            202
           )
         }
 
@@ -392,13 +431,14 @@ export async function POST(request: NextRequest) {
             quotaUnits: 1,
             imagesCount: isSelectedImagesMode ? multipartData?.payload.selectedImageRegions.length : 0,
             selectionHash,
+            // Store selectedImageRegions for later retrieval when formatting stickers
+            selectedImageRegions: isSelectedImagesMode ? multipartData?.payload.selectedImageRegions : undefined,
           })
 
           if (startResult.started || startResult.alreadyExists) {
             // Return 202 with generationId
-            return NextResponse.json(
+            return successResponse(
               {
-                ok: true,
                 status: 'generating',
                 generationId: startResult.generationId,
                 message: startResult.started
@@ -406,7 +446,7 @@ export async function POST(request: NextRequest) {
                   : 'Sticker generation already in progress. Poll for updates.',
                 pollInterval: 2000,
               },
-              { status: 202 }
+              202
             )
           }
         } catch (startError) {
@@ -570,20 +610,25 @@ async function syncGenerateStickers(
   })
 
   return successResponse({
-    stickers: (createdStickers || []).map((s) => ({
-      id: s.id,
-      type: s.type,
-      page: s.page,
-      anchor: {
-        textSnippet: s.anchor_text,
-        rect: s.anchor_rect,
-      },
-      parentId: s.parent_id,
-      contentMarkdown: s.content_markdown,
-      folded: s.folded,
-      depth: s.depth,
-      createdAt: s.created_at,
-    })),
+    stickers: (createdStickers || []).map((s) => {
+      // anchor_rect may contain { rect, isFullPage } structure or just the rect
+      const anchorRect = s.anchor_rect as { rect?: { x: number; y: number; width: number; height: number }; isFullPage?: boolean } | null
+      return {
+        id: s.id,
+        type: s.type,
+        page: s.page,
+        anchor: {
+          textSnippet: s.anchor_text,
+          rect: anchorRect?.rect || anchorRect,
+          isFullPage: anchorRect?.isFullPage,
+        },
+        parentId: s.parent_id,
+        contentMarkdown: s.content_markdown,
+        folded: s.folded,
+        depth: s.depth,
+        createdAt: s.created_at,
+      }
+    }),
     quota: {
       autoExplain: deductResult.quota,
     },
@@ -593,7 +638,8 @@ async function syncGenerateStickers(
 }
 
 /**
- * Copy shared stickers to user's stickers table
+ * Copy shared stickers to user's stickers table.
+ * If selectedImageRegions is provided, stores anchors array in anchor_rect for persistence.
  */
 async function copySharedStickersToUser(
   supabase: ReturnType<typeof createClient>,
@@ -601,27 +647,62 @@ async function copySharedStickersToUser(
   userId: string,
   courseId: string,
   fileId: string,
-  page: number
+  page: number,
+  selectedImageRegions?: Array<{ page: number; rect: { x: number; y: number; width: number; height: number } }>
 ) {
   try {
+    // Build ImageAnchor array from selectedImageRegions
+    const imageAnchors = selectedImageRegions?.map(region => {
+      const id = `${region.page}-${region.rect.x.toFixed(4)}-${region.rect.y.toFixed(4)}-${region.rect.width.toFixed(4)}-${region.rect.height.toFixed(4)}`
+      return {
+        kind: 'image' as const,
+        id,
+        page: region.page,
+        rect: region.rect,
+        mime: 'image/jpeg' as const,
+      }
+    }) || []
+
     const stickersToCreate = (sharedStickers as Array<{
       anchorText?: string
       anchor_text?: string
       explanation?: string
       content_markdown?: string
-    }>).map((s) => ({
-      user_id: userId,
-      course_id: courseId,
-      file_id: fileId,
-      type: 'auto' as const,
-      page,
-      anchor_text: s.anchorText || s.anchor_text || 'Explanation',
-      anchor_rect: null,
-      parent_id: null,
-      content_markdown: s.explanation || s.content_markdown || '',
-      folded: false,
-      depth: 0,
-    }))
+      page?: number
+    }>).map((s) => {
+      const textSnippet = s.anchorText || s.anchor_text || 'Explanation'
+      const stickerPage = s.page || page
+
+      // Build anchors array if we have image regions
+      let anchorRect = null
+      if (imageAnchors.length > 0) {
+        const anchors = [
+          {
+            kind: 'text' as const,
+            page: stickerPage,
+            textSnippet,
+            rect: null,
+          },
+          ...imageAnchors,
+        ]
+        // Store extended anchor structure in anchor_rect JSONB field
+        anchorRect = { anchors }
+      }
+
+      return {
+        user_id: userId,
+        course_id: courseId,
+        file_id: fileId,
+        type: 'auto' as const,
+        page: stickerPage,
+        anchor_text: textSnippet,
+        anchor_rect: anchorRect,
+        parent_id: null,
+        content_markdown: s.explanation || s.content_markdown || '',
+        folded: false,
+        depth: 0,
+      }
+    })
 
     await supabase.from('stickers').insert(stickersToCreate)
   } catch (error) {
@@ -631,19 +712,49 @@ async function copySharedStickersToUser(
 }
 
 /**
- * Format shared stickers for API response
+ * Format shared stickers for API response.
+ * If selectedImageRegions is provided (for with_selected_images mode),
+ * attaches them as ImageAnchor items to each sticker's anchor.anchors array.
  */
-function formatStickers(stickers: unknown[]): Array<{
+function formatStickers(
+  stickers: unknown[],
+  selectedImageRegions?: Array<{ page: number; rect: { x: number; y: number; width: number; height: number } }>
+): Array<{
   id?: string
   type: string
   page?: number
-  anchor: { textSnippet: string; rect: null }
+  anchor: {
+    textSnippet: string
+    rect: { x: number; y: number; width: number; height: number } | null
+    isFullPage?: boolean
+    anchors?: Array<{
+      kind: 'text' | 'image'
+      page: number
+      textSnippet?: string
+      rect?: { x: number; y: number; width: number; height: number } | null
+      id?: string
+      mime?: 'image/jpeg'
+    }>
+  }
   parentId: null
   contentMarkdown: string
   folded: boolean
   depth: number
   createdAt?: string
 }> {
+  // Build ImageAnchor array from selectedImageRegions
+  const imageAnchors = selectedImageRegions?.map(region => {
+    // Generate deterministic region ID (same format as frontend)
+    const id = `${region.page}-${region.rect.x.toFixed(4)}-${region.rect.y.toFixed(4)}-${region.rect.width.toFixed(4)}-${region.rect.height.toFixed(4)}`
+    return {
+      kind: 'image' as const,
+      id,
+      page: region.page,
+      rect: region.rect,
+      mime: 'image/jpeg' as const,
+    }
+  }) || []
+
   return (stickers as Array<{
     id?: string
     anchorText?: string
@@ -652,20 +763,51 @@ function formatStickers(stickers: unknown[]): Array<{
     content_markdown?: string
     page?: number
     created_at?: string
-  }>).map((s, index) => ({
-    id: s.id || `shared-${index}`,
-    type: 'auto',
-    page: s.page,
-    anchor: {
-      textSnippet: s.anchorText || s.anchor_text || 'Explanation',
-      rect: null,
-    },
-    parentId: null,
-    contentMarkdown: s.explanation || s.content_markdown || '',
-    folded: false,
-    depth: 0,
-    createdAt: s.created_at || new Date().toISOString(),
-  }))
+    anchor_rect?: { rect?: { x: number; y: number; width: number; height: number }; isFullPage?: boolean } | null
+  }>).map((s, index) => {
+    const textSnippet = s.anchorText || s.anchor_text || 'Explanation'
+    const stickerPage = s.page || 1
+
+    // Extract rect and isFullPage from anchor_rect
+    const anchorRect = s.anchor_rect
+    const rect = anchorRect?.rect || null
+    const isFullPage = anchorRect?.isFullPage
+
+    // Build anchors array: text anchor + image anchors
+    const anchors: Array<{
+      kind: 'text' | 'image'
+      page: number
+      textSnippet?: string
+      rect?: { x: number; y: number; width: number; height: number } | null
+      id?: string
+      mime?: 'image/jpeg'
+    }> = [
+      {
+        kind: 'text',
+        page: stickerPage,
+        textSnippet,
+        rect: null,
+      },
+      ...imageAnchors,
+    ]
+
+    return {
+      id: s.id || `shared-${index}`,
+      type: 'auto',
+      page: stickerPage,
+      anchor: {
+        textSnippet,
+        rect,
+        isFullPage,
+        anchors: imageAnchors.length > 0 ? anchors : undefined,
+      },
+      parentId: null,
+      contentMarkdown: s.explanation || s.content_markdown || '',
+      folded: false,
+      depth: 0,
+      createdAt: s.created_at || new Date().toISOString(),
+    }
+  })
 }
 
 // ==================== Multipart Request Parsing ====================
@@ -774,5 +916,196 @@ async function parseMultipartRequest(
     return {
       error: errors.invalidInput('Failed to parse multipart request'),
     }
+  }
+}
+
+// ==================== Window Mode Handler ====================
+
+/**
+ * Handle window mode (sliding window auto-explain)
+ *
+ * Creates a session and starts background generation for pages in the window.
+ * Returns 202 with sessionId and window info.
+ */
+async function handleWindowMode(
+  supabase: ReturnType<typeof createClient>,
+  params: {
+    user: { id: string }
+    courseId: string
+    fileId: string
+    page: number
+    pdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
+    locale: 'en' | 'zh-Hans'
+  }
+): Promise<NextResponse> {
+  const { user, courseId, fileId, page, pdfType, locale } = params
+
+  try {
+    // Get file info
+    const { data: file, error: fileError } = await supabase
+      .from('files')
+      .select('*')
+      .eq('id', fileId)
+      .eq('course_id', courseId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (fileError || !file) {
+      return errors.notFound('File')
+    }
+
+    // Check if file is scanned
+    if (file.is_scanned) {
+      return errors.custom(
+        'FILE_IS_SCANNED',
+        'Scanned PDFs do not support auto-explain window mode',
+        400
+      )
+    }
+
+    // Check if page is valid
+    if (page > file.page_count) {
+      return errors.invalidInput(`Page ${page} does not exist (file has ${file.page_count} pages)`)
+    }
+
+    // Check quota
+    const quotaCheck = await checkQuota(supabase, user.id, 'autoExplain')
+    if (!quotaCheck.allowed) {
+      return errors.custom('QUOTA_EXCEEDED', 'Auto explain quota exceeded', 429, {
+        bucket: 'autoExplain',
+        used: quotaCheck.quota.used,
+        limit: quotaCheck.quota.limit,
+        resetAt: quotaCheck.quota.resetAt,
+      })
+    }
+
+    // Download PDF to detect type
+    const { data: pdfData, error: downloadError } = await supabase.storage
+      .from('course-files')
+      .download(file.storage_key)
+
+    if (downloadError || !pdfData) {
+      console.error('Error downloading PDF for window mode:', downloadError)
+      return errors.internalError()
+    }
+
+    const buffer = Buffer.from(await pdfData.arrayBuffer())
+
+    // Detect PDF type (with caching)
+    const detectedPdfType = await getOrDetectPdfType(fileId, buffer)
+
+    // Start session
+    const sessionResult = await startSession(user.id, fileId, page, detectedPdfType)
+
+    if (!sessionResult.success) {
+      if (sessionResult.error === 'SESSION_EXISTS') {
+        return errors.custom(
+          'SESSION_EXISTS',
+          'An active auto-explain session already exists for this file',
+          409
+        )
+      }
+      return errors.custom('SESSION_ERROR', sessionResult.error, 500)
+    }
+
+    const session = sessionResult.session
+
+    // Start background generation (non-blocking)
+    // Use setImmediate to avoid blocking the response
+    setImmediate(() => {
+      runWindowGeneration({
+        session,
+        pdfBuffer: buffer,
+        pdfType: detectedPdfType,
+        userPdfType: pdfType,
+        courseId,
+        totalPages: file.page_count,
+      }).catch((err) => {
+        console.error('Background window generation error:', err)
+      })
+    })
+
+    // Return 202 with session info
+    return successResponse(
+      {
+        sessionId: session.sessionId,
+        windowRange: {
+          start: session.windowStart,
+          end: session.windowEnd,
+        },
+        pdfType: detectedPdfType,
+        message: 'Auto-explain session started. Poll /api/ai/explain-page/session/:sessionId for updates.',
+      },
+      202
+    )
+  } catch (error) {
+    console.error('Error in window mode handler:', error)
+    return errors.internalError()
+  }
+}
+
+/**
+ * Run window generation in the background
+ * Uses saveImmediately option to enable progressive display
+ */
+async function runWindowGeneration(params: {
+  session: WindowState
+  pdfBuffer: Buffer
+  pdfType: PdfType
+  userPdfType: 'Lecture' | 'Homework' | 'Exam' | 'Other'
+  courseId: string
+  totalPages: number
+}) {
+  const { session, pdfBuffer, pdfType, userPdfType, courseId, totalPages } = params
+
+  try {
+    // Get pages to generate in priority order (current, +1, -1, +2, +3, -2, +4, +5)
+    const pagesToGenerate = getPagesToGenerate(
+      session.windowStart,
+      session.windowEnd,
+      session.pagesCompleted,
+      session.pagesInProgress,
+      session.currentPage
+    )
+
+    if (pagesToGenerate.length === 0) {
+      await completeSession(session.sessionId)
+      return
+    }
+
+    // Generate stickers based on PDF type
+    // saveImmediately=true enables progressive display (stickers saved right after generation)
+    if (pdfType === 'ppt') {
+      await generatePptPdfStickers(pdfBuffer, pagesToGenerate, {
+        userId: session.userId,
+        courseId,
+        fileId: session.fileId,
+        pdfType: userPdfType,
+        totalPages,
+        sessionId: session.sessionId,
+        saveImmediately: true, // Save each sticker immediately for progressive display
+        onPageComplete: (result) => {
+          console.log(`PPT page ${result.page} completed:`, result.success)
+        },
+      })
+    } else {
+      // Text PDF - use paragraph accumulation
+      await generateTextPdfStickers(pdfBuffer, pagesToGenerate, {
+        userId: session.userId,
+        courseId,
+        fileId: session.fileId,
+        sessionId: session.sessionId,
+        saveImmediately: true, // Save each sticker immediately for progressive display
+        onPageComplete: (page, stickerCount) => {
+          console.log(`Text page ${page} completed with ${stickerCount} stickers`)
+        },
+      })
+    }
+
+    // Mark session as completed
+    await completeSession(session.sessionId)
+    console.log(`Window generation completed for session ${session.sessionId}`)
+  } catch (error) {
+    console.error(`Window generation failed for session ${session.sessionId}:`, error)
   }
 }

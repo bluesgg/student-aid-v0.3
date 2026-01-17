@@ -1,5 +1,6 @@
 'use client'
 
+import { useTranslations } from 'next-intl'
 import { useDeleteCourse } from '../hooks/use-courses'
 import type { Course } from '../api'
 
@@ -9,6 +10,8 @@ interface DeleteCourseDialogProps {
 }
 
 export function DeleteCourseDialog({ course, onClose }: DeleteCourseDialogProps) {
+  const t = useTranslations('courses')
+  const tCommon = useTranslations('common')
   const deleteCourse = useDeleteCourse()
 
   const handleDelete = () => {
@@ -27,11 +30,13 @@ export function DeleteCourseDialog({ course, onClose }: DeleteCourseDialogProps)
         onClick={onClose}
       />
       <div className="relative bg-white rounded-xl shadow-xl p-6 w-full max-w-md mx-4">
-        <h2 className="text-xl font-bold mb-2">Delete course?</h2>
-        <p className="text-secondary-600 mb-4">
-          Are you sure you want to delete <strong>{course.name}</strong>? This
-          will also delete all uploaded materials and AI-generated content.
-        </p>
+        <h2 className="text-xl font-bold mb-2">{t('deleteTitle')}</h2>
+        <p
+          className="text-secondary-600 mb-4"
+          dangerouslySetInnerHTML={{
+            __html: t('deleteMessage', { name: course.name }),
+          }}
+        />
 
         {deleteCourse.error && (
           <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
@@ -46,7 +51,7 @@ export function DeleteCourseDialog({ course, onClose }: DeleteCourseDialogProps)
             className="btn-secondary flex-1"
             disabled={deleteCourse.isPending}
           >
-            Cancel
+            {tCommon('cancel')}
           </button>
           <button
             type="button"
@@ -54,7 +59,7 @@ export function DeleteCourseDialog({ course, onClose }: DeleteCourseDialogProps)
             className="btn bg-red-600 text-white hover:bg-red-700 focus:ring-red-500 flex-1"
             disabled={deleteCourse.isPending}
           >
-            {deleteCourse.isPending ? 'Deleting...' : 'Delete'}
+            {deleteCourse.isPending ? t('deleting') : tCommon('delete')}
           </button>
         </div>
       </div>

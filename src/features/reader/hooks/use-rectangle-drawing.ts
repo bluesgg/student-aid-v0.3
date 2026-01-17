@@ -7,6 +7,7 @@
 
 import { useState, useCallback, useRef, useEffect } from 'react'
 import { type NormalizedRect, generateRegionId, clampRect } from '@/lib/stickers/selection-hash'
+import { debugLog } from '@/lib/debug'
 
 // ==================== Types ====================
 
@@ -78,6 +79,14 @@ export function useRectangleDrawing(
 ): RectangleDrawingResult {
   const { enabled, minSize = DEFAULT_MIN_SIZE, onRectComplete, onDrawCancel } = options
 
+  // DEBUG: Track hook initialization
+  useEffect(() => {
+    debugLog('[useRectangleDrawing DEBUG] Hook initialized/options changed', {
+      enabled,
+      minSize,
+    })
+  }, [enabled, minSize])
+
   // Drawing state
   const [drawing, setDrawing] = useState<DrawingState>({
     isDrawing: false,
@@ -125,6 +134,12 @@ export function useRectangleDrawing(
   // Handle pointer down - start drawing
   const handlePointerDown = useCallback(
     (e: React.PointerEvent, page: number) => {
+      debugLog('[useRectangleDrawing DEBUG] handlePointerDown called', {
+        enabled,
+        button: e.button,
+        page,
+      })
+
       if (!enabled) return
 
       // Only handle left mouse button or touch
@@ -139,6 +154,14 @@ export function useRectangleDrawing(
       const rect = pageElement.getBoundingClientRect()
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
+
+      debugLog('[useRectangleDrawing DEBUG] Starting drawing', {
+        page,
+        startX: x,
+        startY: y,
+        pageWidth: rect.width,
+        pageHeight: rect.height,
+      })
 
       // Update page dimensions for accurate normalization
       pageDimensionsRef.current.set(page, { width: rect.width, height: rect.height })
@@ -170,6 +193,10 @@ export function useRectangleDrawing(
       const x = e.clientX - rect.left
       const y = e.clientY - rect.top
 
+      // Note: Reduced logging to avoid console spam during mouse move
+      // Uncomment for detailed tracking:
+      // console.log('[useRectangleDrawing DEBUG] handlePointerMove', { x, y })
+
       setDrawing((prev) => ({
         ...prev,
         currentPoint: { x, y },
@@ -181,6 +208,12 @@ export function useRectangleDrawing(
   // Handle pointer up - complete or cancel drawing
   const handlePointerUp = useCallback(
     (e: React.PointerEvent) => {
+      debugLog('[useRectangleDrawing DEBUG] handlePointerUp called', {
+        isDrawing: drawing.isDrawing,
+        hasStartPoint: !!drawing.startPoint,
+        page: drawing.page,
+      })
+
       if (!drawing.isDrawing || !drawing.startPoint || !drawing.page) {
         return
       }
@@ -212,6 +245,11 @@ export function useRectangleDrawing(
       // Check minimum size
       if (pixelWidth < minSize || pixelHeight < minSize) {
         // Too small - cancel
+        debugLog('[useRectangleDrawing DEBUG] Rectangle too small, cancelling', {
+          pixelWidth,
+          pixelHeight,
+          minSize,
+        })
         onDrawCancel?.()
         setDrawing({
           isDrawing: false,
@@ -230,9 +268,21 @@ export function useRectangleDrawing(
         drawing.page
       )
 
+      debugLog('[useRectangleDrawing DEBUG] Rectangle complete', {
+        page: drawing.page,
+        pixelWidth,
+        pixelHeight,
+        normalizedRect,
+      })
+
       if (normalizedRect) {
         // Generate deterministic ID
         const regionId = generateRegionId(drawing.page, normalizedRect)
+        debugLog('[useRectangleDrawing DEBUG] Calling onRectComplete', {
+          page: drawing.page,
+          regionId,
+          normalizedRect,
+        })
         // Call completion handler
         onRectComplete(drawing.page, normalizedRect, regionId)
       }
@@ -251,6 +301,7 @@ export function useRectangleDrawing(
 
   // Cancel drawing (e.g., on Escape key)
   const cancelDrawing = useCallback(() => {
+    debugLog('[useRectangleDrawing DEBUG] cancelDrawing called')
     setDrawing({
       isDrawing: false,
       startPoint: null,
@@ -263,6 +314,8 @@ export function useRectangleDrawing(
 
   // Update current rect preview during drawing
   useEffect(() => {
+    // Note: This effect runs on every drawing state change during mouse move
+    // Only log state transitions, not every update
     if (drawing.isDrawing && drawing.startPoint && drawing.currentPoint && drawing.page) {
       const rect = calculateNormalizedRect(
         drawing.startPoint,

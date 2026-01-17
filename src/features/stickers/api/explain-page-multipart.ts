@@ -160,19 +160,34 @@ export async function explainSelectedImages(
 
 /**
  * Poll for generation status.
- * 
+ * When status is 'ready', the API will save stickers to the user's table.
+ *
  * @param generationId - Generation ID to poll
+ * @param options - Optional parameters for saving stickers to user table
  * @returns Status response
  */
 export async function pollExplainStatus(
-  generationId: string
+  generationId: string,
+  options?: {
+    courseId: string
+    fileId: string
+    page: number
+  }
 ): Promise<{
   status: 'generating' | 'ready' | 'failed'
   stickers?: unknown[]
   error?: string
   generationTimeMs?: number
 }> {
-  const response = await fetch(`/api/ai/explain-page/status/${generationId}`)
+  // Build URL with query params for saving stickers
+  const url = new URL(`/api/ai/explain-page/status/${generationId}`, window.location.origin)
+  if (options) {
+    url.searchParams.set('courseId', options.courseId)
+    url.searchParams.set('fileId', options.fileId)
+    url.searchParams.set('page', options.page.toString())
+  }
+
+  const response = await fetch(url.toString())
   const data = await response.json()
 
   return {

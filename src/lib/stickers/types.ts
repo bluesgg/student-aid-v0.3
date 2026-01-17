@@ -36,6 +36,14 @@ export type EffectiveMode = 'text_only' | 'with_images' | 'with_selected_images'
 export type StickerStatus = 'generating' | 'ready' | 'failed'
 
 /**
+ * Selected image region stored in chunk_plan
+ */
+export interface SelectedImageRegion {
+  page: number
+  rect: { x: number; y: number; width: number; height: number }
+}
+
+/**
  * Cache lookup result
  */
 export interface CacheLookupResult {
@@ -43,6 +51,8 @@ export interface CacheLookupResult {
   stickers?: unknown[] // JSONB stickers array
   generationId?: string
   imageSummaries?: unknown // JSONB image summaries
+  /** Selected image regions for with_selected_images mode (from chunk_plan) */
+  selectedImageRegions?: SelectedImageRegion[]
 }
 
 /**
@@ -62,4 +72,6 @@ export interface GenerationStatusResult {
   stickers?: unknown[]
   error?: string
   generationTimeMs?: number
+  /** Selected image regions for with_selected_images mode (from chunk_plan) */
+  selectedImageRegions?: SelectedImageRegion[]
 }

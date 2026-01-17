@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import { useTranslations } from 'next-intl'
 import { useUploadFile } from '../hooks/use-files'
 import type { FileType } from '../api'
 
@@ -14,21 +15,35 @@ interface PendingFile {
   type: FileType
 }
 
-const FILE_TYPES: { value: FileType; label: string }[] = [
-  { value: 'Lecture', label: 'Lecture Notes' },
-  { value: 'Homework', label: 'Homework' },
-  { value: 'Exam', label: 'Exam' },
-  { value: 'Other', label: 'Other' },
+type FileTypeKey = 'Lecture' | 'Homework' | 'Exam' | 'Other'
+
+const FILE_TYPE_KEYS: FileTypeKey[] = ['Lecture', 'Homework', 'Exam', 'Other']
+
+// PPT MIME types and extensions
+const PPT_MIME_TYPES = [
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
 ]
+const PPT_EXTENSIONS = ['.ppt', '.pptx']
+
+function isPptFile(file: File): boolean {
+  if (PPT_MIME_TYPES.includes(file.type)) return true
+  const fileName = file.name.toLowerCase()
+  return PPT_EXTENSIONS.some((ext) => fileName.endsWith(ext))
+}
 
 export function FileUpload({ courseId }: FileUploadProps) {
+  const t = useTranslations('files')
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>([])
   const [isDragging, setIsDragging] = useState(false)
+  const [pptWarning, setPptWarning] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const uploadFile = useUploadFile()
 
   const addFiles = useCallback((files: FileList) => {
     const newFiles: PendingFile[] = []
+    let hasPptFile = false
+
     for (let i = 0; i < files.length; i++) {
       const file = files[i]
       if (file.type === 'application/pdf') {
@@ -37,8 +52,15 @@ export function FileUpload({ courseId }: FileUploadProps) {
           name: file.name.replace(/\.pdf$/i, ''),
           type: 'Lecture',
         })
+      } else if (isPptFile(file)) {
+        hasPptFile = true
       }
     }
+
+    if (hasPptFile) {
+      setPptWarning(true)
+    }
+
     setPendingFiles((prev) => [...prev, ...newFiles])
   }, [])
 
@@ -140,15 +162,15 @@ export function FileUpload({ courseId }: FileUploadProps) {
           </svg>
         </div>
         <p className="text-secondary-600 mb-2">
-          Drag and drop PDF files here, or{' '}
+          {t('dragAndDropOr')}{' '}
           <button
             onClick={() => fileInputRef.current?.click()}
             className="text-primary-600 hover:text-primary-700 font-medium"
           >
-            browse
+            {t('browse')}
           </button>
         </p>
-        <p className="text-xs text-secondary-400">PDF files only</p>
+        <p className="text-xs text-secondary-400">{t('pdfOnly')}</p>
       </div>
 
       {pendingFiles.length > 0 && (
@@ -166,7 +188,7 @@ export function FileUpload({ courseId }: FileUploadProps) {
                     updatePendingFile(index, { name: e.target.value })
                   }
                   className="input text-sm"
-                  placeholder="File name"
+                  placeholder={t('fileName')}
                 />
               </div>
               <select
@@ -176,9 +198,9 @@ export function FileUpload({ courseId }: FileUploadProps) {
                 }
                 className="input text-sm w-40"
               >
-                {FILE_TYPES.map((ft) => (
-                  <option key={ft.value} value={ft.value}>
-                    {ft.label}
+                {FILE_TYPE_KEYS.map((key) => (
+                  <option key={key} value={key}>
+                    {t(`types.${key}`)}
                   </option>
                 ))}
               </select>
@@ -187,7 +209,7 @@ export function FileUpload({ courseId }: FileUploadProps) {
                 disabled={uploadFile.isPending}
                 className="btn-primary text-sm py-1.5"
               >
-                Upload
+                {t('upload')}
               </button>
               <button
                 onClick={() => removePendingFile(index)}
@@ -215,9 +237,36 @@ export function FileUpload({ courseId }: FileUploadProps) {
               disabled={uploadFile.isPending}
               className="btn-primary w-full"
             >
-              Upload all ({pendingFiles.length} files)
+              {t('uploadAll', { count: pendingFiles.length })}
             </button>
           )}
+        </div>
+      )}
+
+      {pptWarning && (
+        <div className="mt-3 p-3 bg-amber-50 border border-amber-200 rounded-lg text-amber-700 text-sm flex items-start gap-2">
+          <svg
+            className="w-5 h-5 flex-shrink-0 mt-0.5"
+            fill="none"
+            stroke="currentColor"
+            viewBox="0 0 24 24"
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              strokeWidth={2}
+              d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"
+            />
+          </svg>
+          <span>{t('pptNotSupported')}</span>
+          <button
+            onClick={() => setPptWarning(false)}
+            className="ml-auto p-0.5 text-amber-500 hover:text-amber-700"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
         </div>
       )}
 

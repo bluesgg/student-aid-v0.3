@@ -1,3 +1,8 @@
+/**
+ * @deprecated This component has been replaced by auto-explain functionality in sticker panel.
+ * Kept for reference only. Do not use in new code.
+ * See: openspec/changes/relocate-auto-explain-button/proposal.md
+ */
 'use client'
 
 import { memo } from 'react'

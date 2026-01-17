@@ -17,6 +17,7 @@ interface PdfToolbarProps {
   onNextPage: () => void
   canGoPrevious: boolean
   canGoNext: boolean
+  /** Whether page position is being saved */
   isSaving?: boolean
   /** Whether image selection mode is active */
   selectionMode?: boolean
@@ -30,6 +31,8 @@ interface PdfToolbarProps {
   readerMode?: ReaderMode
   /** Callback to change reader mode */
   onReaderModeChange?: (mode: ReaderMode) => void
+  /** Whether auto image detection is enabled (shows "Add Image" instead of "Select Images") */
+  isAutoImageDetectionEnabled?: boolean
 }
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -46,13 +49,14 @@ export function PdfToolbar({
   onNextPage,
   canGoPrevious,
   canGoNext,
-  isSaving,
+  isSaving: _isSaving,
   selectionMode = false,
   onSelectionModeChange,
   selectionModeAvailable = true,
   isGenerating = false,
   readerMode = 'page',
   onReaderModeChange,
+  isAutoImageDetectionEnabled = false,
 }: PdfToolbarProps) {
   const [pageInput, setPageInput] = useState(currentPage.toString())
 
@@ -293,7 +297,7 @@ export function PdfToolbar({
 
       {/* Selection Mode Toggle & Status */}
       <div className="flex items-center gap-3">
-        {/* Image Selection Toggle */}
+        {/* Image Selection Toggle / Mark Image Button */}
         {onSelectionModeChange && (
           <button
             onClick={() => onSelectionModeChange(!selectionMode)}
@@ -307,21 +311,38 @@ export function PdfToolbar({
               !selectionModeAvailable
                 ? 'Not available for scanned PDFs'
                 : selectionMode
-                ? 'Exit selection mode'
+                ? 'Exit mark mode'
+                : isAutoImageDetectionEnabled
+                ? 'Click an image to explain, or draw rectangle for missed images'
                 : 'Select image regions to explain'
             }
           >
-            {/* Bounding box icon */}
-            <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                strokeWidth={2}
-                d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
-              />
-            </svg>
+            {/* Tag icon for "Mark Image", Bounding box for "Select Images" */}
+            {isAutoImageDetectionEnabled && !selectionMode ? (
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M7 7h.01M7 3h5c.512 0 1.024.195 1.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.994 1.994 0 013 12V7a4 4 0 014-4z"
+                />
+              </svg>
+            ) : (
+              <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M4 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM14 5a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1V5zM4 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1H5a1 1 0 01-1-1v-4zM14 15a1 1 0 011-1h4a1 1 0 011 1v4a1 1 0 01-1 1h-4a1 1 0 01-1-1v-4z"
+                />
+              </svg>
+            )}
             <span className="hidden sm:inline">
-              {selectionMode ? 'Exit Selection' : 'Select Images'}
+              {selectionMode
+                ? isAutoImageDetectionEnabled ? 'Exit' : 'Exit Selection'
+                : isAutoImageDetectionEnabled
+                ? 'Mark Image'
+                : 'Select Images'}
             </span>
           </button>
         )}
@@ -331,14 +352,6 @@ export function PdfToolbar({
           <span className="flex items-center gap-1.5 text-sm text-blue-600">
             <div className="h-3 w-3 animate-spin rounded-full border-2 border-blue-600 border-t-transparent" />
             <span className="hidden sm:inline">Generating...</span>
-          </span>
-        )}
-
-        {/* Save Status */}
-        {isSaving && !isGenerating && (
-          <span className="flex items-center gap-1 text-sm text-gray-500">
-            <div className="h-3 w-3 animate-spin rounded-full border border-gray-400 border-t-transparent" />
-            Saving...
           </span>
         )}
       </div>

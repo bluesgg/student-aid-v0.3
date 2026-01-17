@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useEffect } from 'react'
 import Link from 'next/link'
 import { useParams, useRouter } from 'next/navigation'
 import { useCourse } from '@/features/courses/hooks/use-courses'
@@ -10,7 +10,11 @@ import { PdfViewer } from '@/features/reader/components/pdf-viewer'
 import { StickerPanel } from '@/features/stickers/components/sticker-panel'
 import { QAPanel } from '@/features/qa/components/qa-panel'
 import { useExplainSelection } from '@/features/stickers/hooks/use-explain-selection'
+import { useAutoExplainSession } from '@/features/reader/hooks/use-auto-explain-session'
+import { ImageExtractionToast } from '@/features/reader/components/image-extraction-toast'
+import { HoverHighlightProvider } from '@/features/stickers/context'
 import type { PdfType } from '@/features/stickers/api'
+import { debugLog } from '@/lib/debug'
 
 export default function StudyPage() {
   const params = useParams()
@@ -23,8 +27,50 @@ export default function StudyPage() {
 
   const isLoading = courseLoading || fileLoading
 
+  // ==================== DEBUG: StudyPage Lifecycle ====================
+  useEffect(() => {
+    debugLog('[StudyPage DEBUG] Component MOUNTED', {
+      courseId,
+      fileId,
+    })
+    return () => {
+      debugLog('[StudyPage DEBUG] Component UNMOUNTING', {
+        courseId,
+        fileId,
+        hasSelectedRegions,
+        selectedRegionCount,
+      })
+    }
+  }, []) // Empty deps = mount/unmount only
+
+  // DEBUG: Track file data changes
+  useEffect(() => {
+    debugLog('[StudyPage DEBUG] file data changed', {
+      fileId,
+      hasFile: !!file,
+      downloadUrl: file?.downloadUrl ? 'exists' : 'missing',
+      isLoading: fileLoading,
+    })
+  }, [file, fileId, fileLoading])
+
   // Track current page for sticker panel
   const [currentPage, setCurrentPage] = useState(1)
+
+  // Auto-explain session state (lifted from PdfViewer)
+  const {
+    session: autoExplainSession,
+    isActive: isAutoExplainActive,
+    isStarting: isAutoExplainStarting,
+    error: autoExplainError,
+    startSession: startAutoExplainSession,
+    updateWindow: updateAutoExplainWindow,
+    cancelSession: cancelAutoExplainSession,
+  } = useAutoExplainSession(fileId)
+
+  // Track selected image regions
+  const [hasSelectedRegions, setHasSelectedRegions] = useState(false)
+  const [selectedRegionCount, setSelectedRegionCount] = useState(0)
+  const [triggerImageExplanation, setTriggerImageExplanation] = useState(false)
 
   // Explain selection hook for PDF text selection
   const { explain: explainSelection } = useExplainSelection()
@@ -32,6 +78,12 @@ export default function StudyPage() {
   // Handle page change from PDF viewer
   const handlePageChange = useCallback((page: number) => {
     setCurrentPage(page)
+  }, [])
+
+  // Handle selected regions change
+  const handleSelectedRegionsChange = useCallback((hasRegions: boolean, regionCount: number) => {
+    setHasSelectedRegions(hasRegions)
+    setSelectedRegionCount(regionCount)
   }, [])
 
   // Handle text selection for AI explain
@@ -50,6 +102,33 @@ export default function StudyPage() {
     },
     [courseId, fileId, file, explainSelection]
   )
+
+  // Handle start auto-explain session
+  const handleStartAutoExplain = useCallback(async () => {
+    // If there are selected image regions, trigger image explanation instead
+    if (hasSelectedRegions) {
+      setTriggerImageExplanation(true)
+      // Reset trigger after a short delay
+      setTimeout(() => setTriggerImageExplanation(false), 100)
+      return
+    }
+
+    // Otherwise, start window mode auto-explain session
+    // Prevent duplicate session start
+    if (isAutoExplainActive || isAutoExplainStarting) {
+      console.warn('Auto-explain session already active or starting')
+      return
+    }
+
+    if (!file) return
+    await startAutoExplainSession({
+      courseId,
+      fileId,
+      page: currentPage,
+      pdfType: file.type as PdfType,
+      locale: 'en',
+    })
+  }, [hasSelectedRegions, startAutoExplainSession, courseId, fileId, currentPage, file, isAutoExplainActive, isAutoExplainStarting])
 
   // Loading state
   if (isLoading) {
@@ -100,6 +179,15 @@ export default function StudyPage() {
 
   return (
     <div className="flex h-screen flex-col bg-white">
+      {/* Image extraction progress toast */}
+      <ImageExtractionToast
+        courseId={courseId}
+        fileId={fileId}
+        totalPages={file.pageCount}
+        initialStatus={file.imageExtractionStatus}
+        initialProgress={file.imageExtractionProgress}
+      />
+
       {/* Header */}
       <header className="flex items-center justify-between border-b border-gray-200 bg-white px-4 py-3">
         <div className="flex items-center gap-4">
@@ -158,46 +246,61 @@ export default function StudyPage() {
 
       {/* Main Content - 3 Column Layout */}
       <main className="flex-1 overflow-hidden">
-        <ResizableLayout
-          pdfPanel={
-            file.downloadUrl ? (
-              <PdfViewer
-                fileUrl={file.downloadUrl}
+        <HoverHighlightProvider>
+          <ResizableLayout
+            pdfPanel={
+              file.downloadUrl ? (
+                <PdfViewer
+                  fileUrl={file.downloadUrl}
+                  courseId={courseId}
+                  fileId={fileId}
+                  initialPage={file.lastReadPage}
+                  totalPages={file.pageCount}
+                  isScanned={file.isScanned}
+                  onSelectionExplain={handleSelectionExplain}
+                  onPageChange={handlePageChange}
+                  autoExplainSession={autoExplainSession}
+                  isAutoExplainActive={isAutoExplainActive}
+                  updateAutoExplainWindow={updateAutoExplainWindow}
+                  cancelAutoExplainSession={cancelAutoExplainSession}
+                  onSelectedRegionsChange={handleSelectedRegionsChange}
+                  triggerImageExplanation={triggerImageExplanation}
+                />
+              ) : (
+                <div className="flex h-full items-center justify-center text-gray-500">
+                  PDF not available
+                </div>
+              )
+            }
+            stickerPanel={
+              <StickerPanel
                 courseId={courseId}
                 fileId={fileId}
-                initialPage={file.lastReadPage}
-                totalPages={file.pageCount}
+                currentPage={currentPage}
+                pdfType={file.type as PdfType}
                 isScanned={file.isScanned}
-                onSelectionExplain={handleSelectionExplain}
-                onPageChange={handlePageChange}
+                totalPages={file.pageCount}
+                onStartAutoExplain={handleStartAutoExplain}
+                isAutoExplainActive={isAutoExplainActive}
+                isAutoExplainStarting={isAutoExplainStarting}
+                autoExplainProgress={autoExplainSession?.progress}
+                autoExplainWindowRange={autoExplainSession?.windowRange}
+                autoExplainError={autoExplainError}
+                isCurrentPageProcessing={autoExplainSession?.pagesInProgress?.includes(currentPage) ?? false}
               />
-            ) : (
-              <div className="flex h-full items-center justify-center text-gray-500">
-                PDF not available
-              </div>
-            )
-          }
-          stickerPanel={
-            <StickerPanel
-              courseId={courseId}
-              fileId={fileId}
-              currentPage={currentPage}
-              pdfType={file.type as PdfType}
-              isScanned={file.isScanned}
-              totalPages={file.pageCount}
-            />
-          }
-          qaPanel={
-            <QAPanel
-              courseId={courseId}
-              fileId={fileId}
-              pdfType={file.type as PdfType}
-              isScanned={file.isScanned}
-              totalPages={file.pageCount}
-              currentPage={currentPage}
-            />
-          }
-        />
+            }
+            qaPanel={
+              <QAPanel
+                courseId={courseId}
+                fileId={fileId}
+                pdfType={file.type as PdfType}
+                isScanned={file.isScanned}
+                totalPages={file.pageCount}
+                currentPage={currentPage}
+              />
+            }
+          />
+        </HoverHighlightProvider>
       </main>
     </div>
   )

@@ -1,9 +1,11 @@
 'use client'
 
 import Link from 'next/link'
+import { useTranslations } from 'next-intl'
 import { useLogout } from '@/features/auth/hooks/use-auth'
 
 export function AppHeader() {
+  const t = useTranslations('nav')
   const logout = useLogout()
 
   return (
@@ -19,20 +21,20 @@ export function AppHeader() {
               href="/courses"
               className="text-sm text-secondary-600 hover:text-secondary-900"
             >
-              Courses
+              {t('courses')}
             </Link>
             <Link
-              href="/usage"
+              href="/settings"
               className="text-sm text-secondary-600 hover:text-secondary-900"
             >
-              Usage
+              {t('settings')}
             </Link>
             <button
               onClick={() => logout.mutate()}
               disabled={logout.isPending}
               className="text-sm text-secondary-600 hover:text-secondary-900"
             >
-              Sign out
+              {t('signOut')}
             </button>
           </nav>
         </div>

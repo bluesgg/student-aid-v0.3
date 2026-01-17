@@ -1,0 +1,85 @@
+### Test Auto-Explain Window Mode API
+### Install VS Code extension: REST Client (by Huachao Mao)
+###
+### How to get auth token:
+### 1. Start dev server: pnpm dev
+### 2. Login at http://localhost:3000
+### 3. Open browser DevTools → Application → Cookies
+### 4. Copy the value of 'sb-access-token' cookie
+### 5. Paste below
+
+@baseUrl = http://localhost:3000
+@authCookie = sb-access-token=YOUR_TOKEN_HERE
+
+### 1. Start Auto-Explain Session (Window Mode)
+POST {{baseUrl}}/api/ai/explain-page
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{
+  "courseId": "test-course-id",
+  "fileId": "test-file-id",
+  "page": 10,
+  "pdfType": "Lecture",
+  "locale": "en",
+  "mode": "window"
+}
+
+### 2. Get Session Status
+# Replace SESSION_ID with actual session ID from previous response
+GET {{baseUrl}}/api/ai/explain-page/session/550e8400-e29b-41d4-a716-446655440000
+Cookie: {{authCookie}}
+
+### 3. Update Session Window (Scroll)
+PATCH {{baseUrl}}/api/ai/explain-page/session/550e8400-e29b-41d4-a716-446655440000
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{
+  "currentPage": 15,
+  "action": "extend"
+}
+
+### 4. Update Session Window (Jump)
+PATCH {{baseUrl}}/api/ai/explain-page/session/550e8400-e29b-41d4-a716-446655440000
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{
+  "currentPage": 50,
+  "action": "jump"
+}
+
+### 5. Cancel Session
+DELETE {{baseUrl}}/api/ai/explain-page/session/550e8400-e29b-41d4-a716-446655440000
+Cookie: {{authCookie}}
+
+### 6. Refresh Sticker (Create New Version)
+POST {{baseUrl}}/api/ai/explain-page/sticker/sticker-id-here/refresh
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{}
+
+### 7. Switch Sticker Version
+PATCH {{baseUrl}}/api/ai/explain-page/sticker/sticker-id-here/version
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{
+  "version": 1
+}
+
+### 8. Traditional Single Page Mode (for comparison)
+POST {{baseUrl}}/api/ai/explain-page
+Content-Type: application/json
+Cookie: {{authCookie}}
+
+{
+  "courseId": "test-course-id",
+  "fileId": "test-file-id",
+  "page": 10,
+  "pdfType": "Lecture",
+  "locale": "en",
+  "mode": "single"
+}

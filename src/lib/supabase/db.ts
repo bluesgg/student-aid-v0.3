@@ -16,6 +16,11 @@ export type QuotaBucket =
   | 'courseSummary'
   | 'autoExplain'
 export type SummaryType = 'document' | 'section' | 'course'
+export type Locale = 'en' | 'zh'
+export type ImageExtractionStatus = 'pending' | 'partial' | 'complete' | 'failed'
+export type ImageDetectionMethod = 'ops' | 'manual'
+export type PdfType = 'ppt' | 'textbook'
+export type ImageFeedbackType = 'wrong_boundary' | 'missed_image' | 'false_positive'
 
 // ==================== Table Row Types ====================
 
@@ -42,6 +47,8 @@ export interface File {
   pdf_content_hash: string | null
   storage_key: string
   last_read_page: number
+  image_extraction_status: ImageExtractionStatus
+  image_extraction_progress: number
   uploaded_at: string
   updated_at: string
 }
@@ -113,6 +120,34 @@ export interface AIUsageLog {
   created_at: string
 }
 
+export interface UserPreferences {
+  user_id: string
+  ui_locale: Locale
+  explain_locale: Locale
+  created_at: string
+  updated_at: string
+}
+
+export interface DetectedImage {
+  id: string
+  pdf_hash: string
+  page: number
+  image_index: number
+  rect: { x: number; y: number; width: number; height: number }
+  detection_method: ImageDetectionMethod
+  pdf_type: PdfType | null
+  created_at: string
+}
+
+export interface ImageFeedback {
+  id: string
+  detected_image_id: string
+  user_id: string
+  feedback_type: ImageFeedbackType
+  correct_rect: { x: number; y: number; width: number; height: number } | null
+  created_at: string
+}
+
 // ==================== Database Type ====================
 
 export interface Database {
@@ -125,7 +160,7 @@ export interface Database {
       }
       files: {
         Row: File
-        Insert: Omit<File, 'id' | 'uploaded_at' | 'updated_at' | 'last_read_page'>
+        Insert: Omit<File, 'id' | 'uploaded_at' | 'updated_at' | 'last_read_page' | 'image_extraction_status' | 'image_extraction_progress'>
         Update: Partial<Omit<File, 'id' | 'user_id' | 'course_id' | 'uploaded_at'>>
       }
       stickers: {
@@ -151,6 +186,21 @@ export interface Database {
       ai_usage_logs: {
         Row: AIUsageLog
         Insert: Omit<AIUsageLog, 'id' | 'created_at'>
+        Update: never
+      }
+      user_preferences: {
+        Row: UserPreferences
+        Insert: Omit<UserPreferences, 'created_at' | 'updated_at'>
+        Update: Partial<Omit<UserPreferences, 'user_id' | 'created_at'>>
+      }
+      detected_images: {
+        Row: DetectedImage
+        Insert: Omit<DetectedImage, 'id' | 'created_at'>
+        Update: never
+      }
+      image_feedback: {
+        Row: ImageFeedback
+        Insert: Omit<ImageFeedback, 'id' | 'created_at'>
         Update: never
       }
     }

@@ -1,0 +1,236 @@
+{
+  "common": {
+    "loading": "加载中...",
+    "error": "发生错误",
+    "save": "保存",
+    "cancel": "取消",
+    "confirm": "确认",
+    "skip": "跳过",
+    "close": "关闭",
+    "back": "返回",
+    "next": "下一步",
+    "submit": "提交",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "search": "搜索",
+    "noResults": "未找到结果",
+    "retry": "重试"
+  },
+  "nav": {
+    "courses": "课程",
+    "settings": "设置",
+    "signOut": "退出登录"
+  },
+  "auth": {
+    "login": "登录",
+    "register": "注册账户",
+    "email": "邮箱",
+    "password": "密码",
+    "confirmPassword": "确认密码",
+    "forgotPassword": "忘记密码？",
+    "noAccount": "还没有账户？",
+    "hasAccount": "已有账户？",
+    "loginSuccess": "登录成功",
+    "registerSuccess": "注册成功！请查看邮箱验证。",
+    "logoutSuccess": "已退出登录"
+  },
+  "settings": {
+    "title": "设置",
+    "tabs": {
+      "language": "语言",
+      "usage": "用量"
+    },
+    "language": {
+      "title": "语言设置",
+      "description": "配置您的首选语言",
+      "uiLanguage": "界面语言",
+      "uiLanguageDescription": "按钮、菜单等界面元素使用的语言",
+      "explainLanguage": "AI 解释语言",
+      "explainLanguageDescription": "AI 解释内容时使用的语言",
+      "saveSuccess": "语言设置已保存",
+      "saveError": "保存语言设置失败"
+    }
+  },
+  "usage": {
+    "title": "使用统计",
+    "quota": "配额",
+    "quotaUsage": "配额使用情况",
+    "used": "已用",
+    "remaining": "剩余",
+    "resetDate": "重置日期",
+    "estimatedCost": "预估月费",
+    "tokenUsage": "Token 用量",
+    "total": "总计",
+    "costBreakdown": "费用明细",
+    "costBreakdownByOp": "按操作类型统计费用",
+    "noData": "暂无使用数据",
+    "noQuotaData": "暂无配额数据",
+    "totalOperations": "次操作（总计）",
+    "operations": "次操作",
+    "totalCostPeriod": "本周期总费用",
+    "ofTotal": "占比",
+    "tokensPerOp": "tokens/次",
+    "currentPeriod": "当前周期",
+    "projected": "预估",
+    "actualSpend": "实际花费",
+    "ifPaceContinues": "按当前速度计算",
+    "basedOnDays": "基于 {days} 天的使用数据",
+    "statusNormal": "使用正常",
+    "statusWarning": "使用量较高，请注意开支",
+    "statusDanger": "使用量过高，建议减少 AI 操作",
+    "levelNormal": "正常",
+    "levelWarning": "较高",
+    "levelDanger": "过高",
+    "inputTokens": "输入 Token",
+    "outputTokens": "输出 Token",
+    "tokenInfo": "输入 Token 来自提示词（您的问题 + 文档上下文）。输出 Token 来自 AI 回复。输出 Token 通常每个成本更高。",
+    "buckets": {
+      "autoExplain": "自动解释（标注）",
+      "learningInteractions": "问答和选中解释",
+      "documentSummary": "文档总结",
+      "sectionSummary": "章节总结",
+      "courseSummary": "课程大纲"
+    },
+    "bucketDescriptions": {
+      "autoExplain": "悬停概念时自动生成解释",
+      "learningInteractions": "提问和解释选中文本",
+      "documentSummary": "为整个文档生成总结",
+      "sectionSummary": "为指定页面范围生成总结",
+      "courseSummary": "从所有资料生成课程大纲"
+    }
+  },
+  "courses": {
+    "title": "我的课程",
+    "create": "创建课程",
+    "newCourse": "新建课程",
+    "empty": "还没有课程。创建第一个课程开始学习吧！",
+    "name": "课程名称",
+    "namePlaceholder": "例如：微积分",
+    "school": "学校",
+    "schoolPlaceholder": "例如：北京大学",
+    "term": "学期",
+    "files": "文件",
+    "file": "个文件",
+    "filesCount": "个文件",
+    "neverVisited": "从未访问",
+    "lastVisited": "上次访问",
+    "creating": "创建中...",
+    "deleting": "删除中...",
+    "deleteTitle": "删除课程？",
+    "deleteMessage": "确定要删除 <strong>{name}</strong> 吗？这将同时删除所有上传的资料和 AI 生成的内容。",
+    "confirmDelete": "确定要删除这个课程吗？课程内的所有文件也会被删除。",
+    "deleteSuccess": "课程已删除",
+    "deleteError": "删除课程失败",
+    "deleteCourse": "删除课程"
+  },
+  "files": {
+    "title": "课程资料",
+    "upload": "上传 PDF",
+    "uploadFile": "上传文件",
+    "empty": "还没有文件。上传第一个 PDF 开始吧！",
+    "type": "类型",
+    "page": "页",
+    "pages": "页",
+    "uploaded": "上传时间",
+    "dragAndDropOr": "将 PDF 文件拖放到这里，或",
+    "browse": "浏览",
+    "fileName": "文件名",
+    "dragAndDrop": "将 PDF 文件拖放到这里",
+    "or": "或",
+    "browseFiles": "选择文件",
+    "selectFile": "选择文件",
+    "uploading": "上传中...",
+    "processing": "处理中...",
+    "uploadSuccess": "文件上传成功",
+    "uploadError": "文件上传失败",
+    "uploadAll": "全部上传（{count} 个文件）",
+    "maxSize": "文件大小上限：{size}MB",
+    "pdfOnly": "仅支持 PDF 文件",
+    "pptNotSupported": "暂不支持 PPT/PPTX 文件，请转换为 PDF 后再上传。",
+    "scanned": "扫描件",
+    "deleteFile": "删除文件",
+    "confirmDelete": "确定要删除这个文件吗？",
+    "confirmDeleteMessage": "删除「{name}」？这将同时删除该文件的所有 AI 生成内容。",
+    "loadError": "加载文件失败，请重试。",
+    "types": {
+      "Lecture": "讲义",
+      "Homework": "作业",
+      "Exam": "试卷",
+      "Other": "其他资料"
+    },
+    "extraction": {
+      "aiReady": "AI 就绪",
+      "aiReadyTooltip": "AI 就绪 - 已提取 {count} 条知识条目",
+      "analyzing": "分析中",
+      "analyzingPages": "{processed}/{total} 页",
+      "starting": "启动中...",
+      "analyzingTooltip": "正在分析文档 - {progress}",
+      "partial": "部分完成",
+      "failedTooltip": "分析失败：{error}"
+    },
+    "imageExtraction": {
+      "ready": "图片就绪",
+      "readyTooltip": "已检测到可点击解释的图片",
+      "detecting": "图片检测",
+      "progress": "{processed}/{total}",
+      "detectingTooltip": "正在检测图片 - {progress} 页",
+      "failed": "图片不可用",
+      "failedTooltip": "图片检测失败"
+    }
+  },
+  "reader": {
+    "explainPage": "解释本页",
+    "explainSelection": "解释选中内容",
+    "askQuestion": "提问",
+    "summary": "总结",
+    "stickers": "标注",
+    "qa": "问答",
+    "markImage": "标记图片",
+    "exitMarkMode": "退出",
+    "noImageDetected": "此位置未检测到图片",
+    "drawManually": "手动框选",
+    "markImageTooltip": "点击图片进行解释，或手动框选遗漏的图片"
+  },
+  "pdf": {
+    "loading": {
+      "downloading": "下载中...",
+      "downloadingPercent": "下载中... {percent}%",
+      "downloadingSize": "下载中... {size} MB",
+      "loadingPage": "正在加载第 {current} 页，共 {total} 页",
+      "loadingFromCache": "正在从缓存加载...",
+      "preparingDocument": "正在准备文档..."
+    },
+    "cache": {
+      "title": "PDF 缓存",
+      "size": "已使用 {size} MB",
+      "fileCount": "已缓存 {count} 个 PDF",
+      "clearButton": "清除 PDF 缓存",
+      "clearConfirm": "确定要清除所有缓存的 PDF 吗？",
+      "clearSuccess": "PDF 缓存已清除"
+    },
+    "error": {
+      "loadFailed": "PDF 加载失败",
+      "cacheFailed": "PDF 缓存失败（继续无缓存加载）"
+    }
+  },
+  "stickers": {
+    "title": "标注",
+    "empty": "本页暂无标注",
+    "followUp": "追问",
+    "collapse": "收起",
+    "expand": "展开"
+  },
+  "languageModal": {
+    "title": "欢迎使用 StudentAid！",
+    "description": "请选择您的首选语言。您可以稍后在设置中更改。",
+    "continue": "继续"
+  },
+  "errors": {
+    "unauthorized": "请登录后继续",
+    "notFound": "资源未找到",
+    "serverError": "出错了，请重试。",
+    "quotaExceeded": "已达到使用限制，请等待配额重置。",
+    "networkError": "网络错误，请检查连接。"
+  }
+}

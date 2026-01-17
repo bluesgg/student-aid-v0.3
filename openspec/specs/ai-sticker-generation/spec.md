@@ -4,33 +4,25 @@
 Defines the behavior of automatic sticker generation for PDF pages using AI-powered content analysis.
 ## Requirements
 ### Requirement: Word-Count-Based Sticker Generation
-The system SHALL generate stickers based on page word count rather than a fixed count.
+The system SHALL use different sticker generation strategies based on PDF type detection.
 
-#### Scenario: Short page (0-150 words)
-- **GIVEN** a PDF page with 0-150 words of text content
-- **WHEN** user requests auto-explanation for the page
-- **THEN** the system generates exactly 1 sticker
-- **AND** the sticker explains the main concept on the page
+#### Scenario: PPT-type PDF generates exactly 1 full-page sticker
+- **GIVEN** a PPT-type PDF page (avgCharsPerPage < 500 OR imageRatio > 0.6)
+- **WHEN** auto-explain generates stickers for the page
+- **THEN** system generates exactly 1 sticker for the page
+- **AND** sticker.anchor.rect = { x: 0, y: 0, width: 1, height: 1 }
+- **AND** sticker.anchor.isFullPage = true
+- **AND** sticker content summarizes the entire slide
 
-#### Scenario: Medium page (151-300 words)
-- **GIVEN** a PDF page with 151-300 words of text content
-- **WHEN** user requests auto-explanation for the page
-- **THEN** the system generates exactly 2 stickers
-- **AND** stickers cover 2 distinct key concepts
+#### Scenario: Text-type PDF uses paragraph accumulation with 2-6 stickers
+- **GIVEN** a text-type PDF page with 500+ words
+- **WHEN** auto-explain generates stickers for the page
+- **THEN** system generates 2-6 stickers based on paragraph structure
+- **AND** each sticker.anchor.rect corresponds to the source paragraph region
+- **AND** sticker.anchor.isFullPage is undefined or false
+- **AND** old word-count tier logic is NOT used
 
-#### Scenario: Long page (301-500 words)
-- **GIVEN** a PDF page with 301-500 words of text content
-- **WHEN** user requests auto-explanation for the page
-- **THEN** the system generates 3-4 stickers
-- **AND** stickers are distributed across major concepts
-
-#### Scenario: Very long page (500+ words)
-- **GIVEN** a PDF page with more than 500 words of text content
-- **WHEN** user requests auto-explanation for the page
-- **THEN** the system identifies paragraph boundaries
-- **AND** generates 1 sticker per significant paragraph
-- **AND** generates no more than 8 stickers total
-- **AND** each sticker corresponds to a logical content section
+---
 
 ### Requirement: Minimum Sticker Guarantee
 The system SHALL always generate at least one sticker per page.
@@ -408,4 +400,150 @@ The system SHALL inject relevant context when explaining user-selected text or i
 - **AND** the explanation connects the diagram to the formal theorem statement
 
 ---
+
+### Requirement: Cross-Page Sticker Anchoring
+The system SHALL support stickers that span multiple pages with accurate range tracking.
+
+#### Scenario: Single-page sticker has null page_range
+- **GIVEN** a PPT-type PDF generates 1 sticker per page
+- **WHEN** sticker is created for page 10
+- **THEN** `sticker.page = 10`
+- **AND** `sticker.page_range = null` (not needed for single-page stickers)
+- **AND** `sticker.anchor_text` contains text from page 10
+
+#### Scenario: Cross-page sticker stores full range
+- **GIVEN** a text-type PDF accumulates paragraphs across pages
+- **AND** page 5 ends with 100-word paragraph A
+- **AND** page 6 starts with 250-word paragraph B
+- **WHEN** system generates sticker for merged content (350 words total)
+- **THEN** `sticker.page = 5` (start page for display)
+- **AND** `sticker.page_range = { start: { page: 5, y_start: 800, y_end: 850 }, end: { page: 6, y_start: 50, y_end: 200 } }`
+- **AND** `sticker.anchor_text` contains first sentence from paragraph A
+
+#### Scenario: Refresh cross-page sticker re-extracts full range
+- **GIVEN** a sticker with `page_range = { start: { page: 5, ... }, end: { page: 6, ... } }`
+- **WHEN** user clicks refresh
+- **THEN** system extracts text from page 5 (y_start: 800, y_end: 850)
+- **AND** extracts text from page 6 (y_start: 50, y_end: 200)
+- **AND** merges extracted text into single prompt
+- **AND** generates new explanation for the full merged content
+
+#### Scenario: Anchor text uses starting paragraph only
+- **GIVEN** a cross-page sticker spanning pages 5-6
+- **AND** paragraph A (page 5) is "微积分的基本定理指出..."
+- **AND** paragraph B (page 6) is "通过积分和导数的关系..."
+- **WHEN** system sets `anchor_text`
+- **THEN** `anchor_text = "微积分的基本定理指出..."` (only paragraph A)
+- **AND** user can locate sticker by finding this text on page 5
+
+#### Scenario: Cross-page sticker highlight shows on start page only
+- **GIVEN** a cross-page sticker displayed on page 5
+- **WHEN** user hovers over sticker card
+- **THEN** highlight overlay appears at `y_start: 800, y_end: 850` on page 5
+- **AND** no highlight appears on page 6 (even though content is from page 6)
+- **AND** sticker positioning is unambiguous (always on start page)
+
+---
+
+### Requirement: Window-Mode Sticker Generation
+The system SHALL support generating stickers for a sliding window of pages instead of single-page requests.
+
+#### Scenario: Window mode generates multiple pages in background
+- **GIVEN** user clicks "Start Explaining From This Page" on page 10
+- **WHEN** API receives request with `mode = 'window'`
+- **THEN** system creates an `auto_explain_sessions` row
+- **AND** calculates window range: [8, 15] (currentPage-2 to currentPage+5)
+- **AND** starts background generation for all pages in window
+- **AND** returns `sessionId` immediately (non-blocking)
+
+#### Scenario: Window generation uses PDF type to select strategy
+- **GIVEN** a PPT-type PDF (detected as `pdf_type_detected = 'ppt'`)
+- **WHEN** window generation processes page 12
+- **THEN** system extracts full page text
+- **AND** generates exactly 1 sticker for page 12
+- **AND** no paragraph accumulation occurs
+
+#### Scenario: Text PDF uses paragraph accumulation in window
+- **GIVEN** a text-type PDF (detected as `pdf_type_detected = 'text'`)
+- **WHEN** window generation processes pages 10-12
+- **AND** page 10 has 200 words, page 11 has 100 words, page 12 has 150 words
+- **THEN** system accumulates paragraphs across page boundaries
+- **AND** generates stickers when accumulated words reach 300-500 range
+- **AND** may generate cross-page stickers as needed
+
+#### Scenario: Window respects shared cache
+- **GIVEN** user requests window generation for pages 8-15
+- **AND** pages 8-10 already have cached stickers in `shared_auto_stickers`
+- **WHEN** system checks shared cache for each page
+- **THEN** pages 8-10 are copied from cache (no API call)
+- **AND** pages 11-15 are generated via OpenAI
+- **AND** total API calls = 5 instead of 8
+
+#### Scenario: User-regenerated versions bypass shared cache
+- **GIVEN** page 10 has a cached sticker (version 1) from shared cache
+- **WHEN** user clicks refresh to generate version 2
+- **THEN** version 2 is stored only in user's `stickers` and `sticker_versions` tables
+- **AND** version 2 is NOT written to `shared_auto_stickers`
+- **AND** other users will not see this user's customized version
+
+---
+
+### Requirement: Full-Page Sticker Anchor Marker
+The system SHALL mark PPT-type stickers with an explicit full-page indicator in the anchor structure.
+
+#### Scenario: PPT sticker has isFullPage flag set
+- **GIVEN** a PPT-type PDF
+- **WHEN** auto-explain generates a sticker
+- **THEN** sticker.anchor.isFullPage = true
+- **AND** sticker.anchor.rect = { x: 0, y: 0, width: 1, height: 1 }
+
+#### Scenario: Text-type sticker has no isFullPage flag
+- **GIVEN** a text-type PDF
+- **WHEN** auto-explain generates stickers
+- **THEN** sticker.anchor.isFullPage is undefined or false
+- **AND** sticker.anchor.rect corresponds to paragraph boundaries
+
+#### Scenario: Legacy stickers without isFullPage flag
+- **GIVEN** an existing sticker created before this feature
+- **WHEN** system reads the sticker
+- **THEN** missing isFullPage is treated as false
+- **AND** hover highlighting behavior applies normally
+
+---
+
+### Requirement: Bidirectional Hover-to-Source Highlighting
+The system SHALL provide bidirectional hover highlighting between sticker cards and PDF paragraph regions for text-type PDFs.
+
+#### Scenario: Hover sticker card highlights PDF region
+- **GIVEN** a text-type PDF with paragraph-aligned stickers
+- **AND** sticker has anchor.rect = { x: 0.1, y: 0.2, width: 0.8, height: 0.15 }
+- **WHEN** user hovers over the sticker card
+- **THEN** PDF viewer highlights the region at (x: 0.1, y: 0.2, width: 0.8, height: 0.15)
+- **AND** highlight style is: border: 2px solid #3B82F6, background: rgba(59,130,246,0.1)
+- **AND** transition animation is 150ms ease-in-out
+
+#### Scenario: Hover PDF region highlights sticker card
+- **GIVEN** a text-type PDF with paragraph-aligned stickers
+- **AND** sticker has anchor.rect covering region R
+- **WHEN** user hovers mouse over region R in PDF viewer
+- **THEN** corresponding sticker card is highlighted
+- **AND** highlight style is: border: 2px solid #3B82F6, background: rgba(59,130,246,0.05)
+- **AND** transition animation is 150ms ease-in-out
+
+#### Scenario: Multiple stickers covering same region all highlight
+- **GIVEN** two stickers with overlapping anchor.rect regions
+- **WHEN** user hovers over the overlapping PDF region
+- **THEN** both sticker cards are highlighted simultaneously
+
+#### Scenario: Full-page stickers skip hover highlighting
+- **GIVEN** a PPT-type PDF with full-page sticker (anchor.isFullPage = true)
+- **WHEN** user hovers over the sticker card
+- **THEN** no PDF region highlight is shown
+- **AND** no special highlighting occurs (full page is already visible)
+
+#### Scenario: Mouse leaves highlighted element
+- **GIVEN** a sticker card or PDF region is currently highlighted
+- **WHEN** mouse leaves the trigger element
+- **THEN** highlight fades out with 150ms transition
+- **AND** both PDF and sticker return to normal state
 

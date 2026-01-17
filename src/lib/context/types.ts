@@ -227,6 +227,7 @@ export interface ExtractionResponse {
     content: string
     keywords: string[]
     quality_score: number
+    source_page?: number
   }>
 }
 

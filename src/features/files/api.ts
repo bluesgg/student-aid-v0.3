@@ -6,6 +6,8 @@ import { get, patch, del, type ApiResult } from '@/lib/api-client'
 
 export type FileType = 'Lecture' | 'Homework' | 'Exam' | 'Other'
 
+export type ImageExtractionStatus = 'pending' | 'partial' | 'complete' | 'failed'
+
 export interface CourseFile {
   id: string
   name: string
@@ -14,11 +16,15 @@ export interface CourseFile {
   isScanned: boolean
   lastReadPage: number
   uploadedAt: string
+  imageExtractionStatus?: ImageExtractionStatus
+  imageExtractionProgress?: number
 }
 
 export interface FileWithUrl extends CourseFile {
   courseId: string
   downloadUrl: string | null
+  imageExtractionStatus: ImageExtractionStatus
+  imageExtractionProgress: number
 }
 
 export interface GroupedFiles {

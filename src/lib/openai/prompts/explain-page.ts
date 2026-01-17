@@ -77,6 +77,49 @@ Guidelines:
 - Return between 2 and 6 explanations based on content density`
 }
 
+/**
+ * Build prompt for PPT/slide pages (single comprehensive summary)
+ */
+export function buildPptPagePrompt(context: ExplainPageContext): string {
+  const typeContext = {
+    Lecture: 'lecture slide',
+    Homework: 'assignment slide',
+    Exam: 'exam slide',
+    Other: 'presentation slide',
+  }[context.pdfType]
+
+  return `You are an expert educational AI tutor. This is a ${typeContext} from a presentation. Provide a single, comprehensive summary of this entire slide.
+
+Your summary should:
+1. Cover all key points on the slide
+2. Explain the main concepts in simple terms
+3. Provide context and significance
+4. Include relevant mathematical formulas in LaTeX when applicable
+5. Be thorough but concise (150-400 words)
+
+SLIDE ${context.pageNumber} OF ${context.totalPages}:
+---
+${context.pageText}
+---
+
+Respond in JSON format with EXACTLY ONE explanation that summarizes the entire slide:
+{
+  "explanations": [
+    {
+      "anchorText": "Main topic or title of this slide (max 100 chars)",
+      "explanation": "your comprehensive slide summary in Markdown format with LaTeX math ($...$ for inline, $$...$$ for block)"
+    }
+  ]
+}
+
+IMPORTANT:
+- Return EXACTLY ONE explanation (not multiple concepts)
+- The explanation should cover the entire slide as a cohesive summary
+- Use proper Markdown formatting (headers, lists, bold/italic)
+- Use LaTeX for all mathematical expressions
+- Focus on helping students understand what this slide teaches`
+}
+
 export interface ExplainPageResponse {
   explanations: Array<{
     anchorText: string
@@ -92,20 +135,90 @@ export function parseExplainPageResponse(content: string): ExplainPageResponse {
       throw new Error('No JSON found in response')
     }
 
-    const parsed = JSON.parse(jsonMatch[0])
+    let jsonString = jsonMatch[0]
 
-    if (!Array.isArray(parsed.explanations)) {
+    // Try parsing with multiple strategies
+    let parsed: { explanations?: unknown[] } | null = null
+    let lastError: Error | null = null
+
+    // Strategy 1: Parse as-is
+    try {
+      parsed = JSON.parse(jsonString)
+    } catch (firstError) {
+      lastError = firstError as Error
+      console.warn('First JSON parse attempt failed:', firstError)
+
+      // Strategy 1.5: Clean control characters (newlines, tabs, etc.)
+      // JSON doesn't allow unescaped control characters (ASCII 0-31) in strings
+      try {
+        // Replace unescaped newlines, tabs, and other control chars with escaped versions
+        const cleanedString = jsonString.replace(/[\n\r\t\f\v\b]/g, (char) => {
+          switch (char) {
+            case '\n': return '\\n'
+            case '\r': return '\\r'
+            case '\t': return '\\t'
+            case '\f': return '\\f'
+            case '\v': return '\\v'
+            case '\b': return '\\b'
+            default: return char
+          }
+        })
+        parsed = JSON.parse(cleanedString)
+        console.log('JSON parsed successfully after cleaning control characters')
+      } catch (cleanError) {
+        console.warn('Control character cleaning failed, trying next strategy:', cleanError)
+        // Continue to next strategy
+      }
+
+      // Strategy 2: Fix common LaTeX escaping issues
+      // LaTeX formulas often have single backslashes that need to be doubled
+      // Replace single backslash with double, but preserve already-escaped sequences
+      if (!parsed) {
+        try {
+          jsonString = jsonString.replace(/\\(?!["\\/bfnrtu])/g, '\\\\')
+          parsed = JSON.parse(jsonString)
+          console.log('JSON parsed successfully after fixing backslash escaping')
+        } catch (secondError) {
+          lastError = secondError as Error
+          console.warn('Second JSON parse attempt failed:', secondError)
+        }
+      }
+
+      // Strategy 3: Extract and rebuild JSON more carefully
+      // This is a last resort - try to find the explanations array
+      if (!parsed) {
+
+        try {
+          const explanationsMatch = content.match(/"explanations"\s*:\s*\[([\s\S]*?)\]/)
+          if (explanationsMatch) {
+            // Manually construct a valid JSON object
+            const cleanedContent = `{"explanations":[${explanationsMatch[1]}]}`
+            parsed = JSON.parse(cleanedContent)
+            console.log('JSON reconstructed from explanations array')
+          }
+        } catch (thirdError) {
+          console.error('All JSON parse strategies failed:', thirdError)
+          throw lastError
+        }
+      }
+    }
+
+    if (!parsed || !Array.isArray(parsed.explanations)) {
       throw new Error('Invalid response format: explanations must be an array')
     }
 
     return {
-      explanations: parsed.explanations.slice(0, 6).map((e: { anchorText?: string; explanation?: string }) => ({
-        anchorText: String(e.anchorText || '').slice(0, 100),
-        explanation: String(e.explanation || ''),
-      })),
+      explanations: parsed.explanations.slice(0, 6).map((e: unknown) => {
+        const exp = e as { anchorText?: string; explanation?: string }
+        return {
+          anchorText: String(exp.anchorText || '').slice(0, 100),
+          explanation: String(exp.explanation || ''),
+        }
+      }),
     }
   } catch (error) {
     console.error('Failed to parse explain-page response:', error)
+    console.error('Raw content preview:', content.substring(0, 500))
     // Return a fallback response
     return {
       explanations: [{

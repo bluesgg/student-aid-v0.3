@@ -48,20 +48,36 @@ export async function GET(request: NextRequest) {
     }
 
     // Transform to API format
-    const items = (stickers || []).map((s) => ({
-      id: s.id,
-      type: s.type,
-      page: s.page,
-      anchor: {
-        textSnippet: s.anchor_text,
-        rect: s.anchor_rect,
-      },
-      parentId: s.parent_id,
-      contentMarkdown: s.content_markdown,
-      folded: s.folded,
-      depth: s.depth,
-      createdAt: s.created_at,
-    }))
+    const items = (stickers || []).map((s) => {
+      // Check if anchor_rect contains extended anchor structure (with anchors array)
+      const anchorRect = s.anchor_rect as { anchors?: unknown[]; x?: number; y?: number; width?: number; height?: number } | null
+      const hasExtendedAnchor = anchorRect?.anchors && Array.isArray(anchorRect.anchors)
+
+      // Build anchor object
+      const anchor = hasExtendedAnchor
+        ? {
+            textSnippet: s.anchor_text,
+            rect: null,
+            anchors: anchorRect!.anchors,
+          }
+        : {
+            textSnippet: s.anchor_text,
+            // Legacy format: anchor_rect is a simple rect object
+            rect: anchorRect && 'x' in anchorRect ? anchorRect : null,
+          }
+
+      return {
+        id: s.id,
+        type: s.type,
+        page: s.page,
+        anchor,
+        parentId: s.parent_id,
+        contentMarkdown: s.content_markdown,
+        folded: s.folded,
+        depth: s.depth,
+        createdAt: s.created_at,
+      }
+    })
 
     return successResponse({ items })
   } catch {

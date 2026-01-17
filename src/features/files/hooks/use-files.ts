@@ -22,7 +22,10 @@ export function useFiles(courseId: string) {
 }
 
 /**
- * Hook for fetching a single file
+ * Hook for fetching a single file.
+ * Includes caching configuration:
+ * - staleTime: 30 minutes (signed URL is valid for 1 hour, so 30 min is safe)
+ * - This prevents redundant API calls when navigating back to the same file
  */
 export function useFile(courseId: string, fileId: string) {
   return useQuery({
@@ -35,6 +38,8 @@ export function useFile(courseId: string, fileId: string) {
       return result.data
     },
     enabled: !!courseId && !!fileId,
+    staleTime: 30 * 60 * 1000, // 30 minutes - safe for 1-hour signed URL
+    gcTime: 60 * 60 * 1000, // 1 hour - keep in cache
   })
 }
 

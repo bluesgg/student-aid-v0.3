@@ -10,6 +10,7 @@ import { upsertCanonicalDocument, addCanonicalRef } from '@/lib/stickers/shared-
 import { validateStorageLimits } from '@/lib/context/storage-limits'
 import { triggerContextExtraction } from '@/lib/context/extraction-trigger'
 import { runContextWorker } from '@/lib/context/extraction-worker'
+import { triggerImageExtraction } from '@/lib/context/image-extraction-trigger'
 
 interface RouteParams {
   params: { courseId: string }
@@ -63,6 +64,8 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       isScanned: file.is_scanned,
       lastReadPage: file.last_read_page,
       uploadedAt: file.uploaded_at,
+      imageExtractionStatus: file.image_extraction_status || 'pending',
+      imageExtractionProgress: file.image_extraction_progress || 0,
     }))
 
     // Group by type
@@ -259,6 +262,29 @@ export async function POST(request: NextRequest, { params }: RouteParams) {
       .catch((err) => {
         // Non-fatal: log but don't fail the upload
         console.error('[Context] Error triggering extraction:', err)
+      })
+
+    // Trigger image extraction in parallel (async, non-blocking)
+    // Feature flag controlled - only runs if ENABLE_AUTO_IMAGE_DETECTION is true
+    // Use textContentHash to match pdf_content_hash stored in files table
+    triggerImageExtraction({
+      fileId: fileRecord.id,
+      pdfHash: textContentHash,
+      pdfBuffer: buffer,
+      totalPages: pdfInfo.pageCount,
+    })
+      .then((result) => {
+        console.log('[ImageExtract] Extraction triggered on upload:', {
+          fileId: fileRecord.id,
+          cached: result.cached,
+          status: result.status,
+          imagesFound: result.imagesFound,
+          pagesProcessed: result.pagesProcessed,
+        })
+      })
+      .catch((err) => {
+        // Non-fatal: log but don't fail the upload
+        console.error('[ImageExtract] Error triggering extraction:', err)
       })
 
     return successResponse(

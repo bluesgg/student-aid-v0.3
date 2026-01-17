@@ -2,9 +2,10 @@
 
 import Link from 'next/link'
 import { useMemo } from 'react'
+import { useTranslations } from 'next-intl'
 import { useFiles, useDeleteFile } from '../hooks/use-files'
 import { useExtractionStatuses, type ExtractionStatusData } from '../hooks/use-extraction-status'
-import { ExtractionStatusBadge } from './extraction-status-badge'
+import { ExtractionStatusBadge, ImageExtractionStatusBadge } from './extraction-status-badge'
 import type { CourseFile, FileType } from '../api'
 
 interface FileListProps {
@@ -17,9 +18,10 @@ interface FileGroupProps {
   courseId: string
   onDelete: (file: CourseFile) => void
   getStatus: (fileId: string) => ExtractionStatusData | undefined
+  t: ReturnType<typeof useTranslations<'files'>>
 }
 
-function FileGroup({ title, files, courseId, onDelete, getStatus }: FileGroupProps) {
+function FileGroup({ title, files, courseId, onDelete, getStatus, t }: FileGroupProps) {
   if (files.length === 0) return null
 
   return (
@@ -35,6 +37,7 @@ function FileGroup({ title, files, courseId, onDelete, getStatus }: FileGroupPro
             courseId={courseId}
             onDelete={() => onDelete(file)}
             extractionStatus={getStatus(file.id)}
+            t={t}
           />
         ))}
       </div>
@@ -47,9 +50,10 @@ interface FileRowProps {
   courseId: string
   onDelete: () => void
   extractionStatus: ExtractionStatusData | undefined
+  t: ReturnType<typeof useTranslations<'files'>>
 }
 
-function FileRow({ file, courseId, onDelete, extractionStatus }: FileRowProps) {
+function FileRow({ file, courseId, onDelete, extractionStatus, t }: FileRowProps) {
   return (
     <div className="flex items-center justify-between p-3 bg-white rounded-lg border border-secondary-200 hover:border-primary-300 transition-colors group">
       <Link
@@ -75,14 +79,19 @@ function FileRow({ file, courseId, onDelete, extractionStatus }: FileRowProps) {
           </p>
           <div className="flex items-center gap-2 flex-wrap">
             <p className="text-xs text-secondary-500">
-              {file.pageCount} {file.pageCount === 1 ? 'page' : 'pages'}
+              {file.pageCount} {file.pageCount === 1 ? t('page') : t('pages')}
               {file.isScanned && (
                 <span className="ml-2 text-amber-600" title="Scanned PDF - AI features may be limited">
-                  Scanned
+                  {t('scanned')}
                 </span>
               )}
             </p>
             <ExtractionStatusBadge status={extractionStatus} />
+            <ImageExtractionStatusBadge
+              status={file.imageExtractionStatus}
+              progress={file.imageExtractionProgress || 0}
+              totalPages={file.pageCount}
+            />
           </div>
         </div>
       </Link>
@@ -92,7 +101,7 @@ function FileRow({ file, courseId, onDelete, extractionStatus }: FileRowProps) {
           onDelete()
         }}
         className="p-2 text-secondary-400 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
-        title="Delete file"
+        title={t('deleteFile')}
       >
         <svg
           className="w-4 h-4"
@@ -112,14 +121,10 @@ function FileRow({ file, courseId, onDelete, extractionStatus }: FileRowProps) {
   )
 }
 
-const FILE_TYPE_TITLES: Record<FileType, string> = {
-  Lecture: 'Lecture Notes',
-  Homework: 'Homework',
-  Exam: 'Exams',
-  Other: 'Other Materials',
-}
+const FILE_TYPE_KEYS: FileType[] = ['Lecture', 'Homework', 'Exam', 'Other']
 
 export function FileList({ courseId }: FileListProps) {
+  const t = useTranslations('files')
   const { data, isLoading, error } = useFiles(courseId)
   const deleteFile = useDeleteFile()
 
@@ -145,7 +150,7 @@ export function FileList({ courseId }: FileListProps) {
   const { getStatus } = useExtractionStatuses(fileIds, { fileNames })
 
   const handleDelete = (file: CourseFile) => {
-    if (confirm(`Delete "${file.name}"? This will also delete all AI-generated content for this file.`)) {
+    if (confirm(t('confirmDeleteMessage', { name: file.name }))) {
       deleteFile.mutate({ courseId, fileId: file.id })
     }
   }
@@ -161,7 +166,7 @@ export function FileList({ courseId }: FileListProps) {
   if (error) {
     return (
       <div className="text-center py-8">
-        <p className="text-red-600">Failed to load files. Please try again.</p>
+        <p className="text-red-600">{t('loadError')}</p>
       </div>
     )
   }
@@ -169,21 +174,22 @@ export function FileList({ courseId }: FileListProps) {
   if (!data || data.items.length === 0) {
     return (
       <div className="text-center py-8">
-        <p className="text-secondary-500">No files yet. Upload your first PDF!</p>
+        <p className="text-secondary-500">{t('empty')}</p>
       </div>
     )
   }
 
   return (
     <div>
-      {(Object.keys(FILE_TYPE_TITLES) as FileType[]).map((type) => (
+      {FILE_TYPE_KEYS.map((type) => (
         <FileGroup
           key={type}
-          title={FILE_TYPE_TITLES[type]}
+          title={t(`types.${type}`)}
           files={data.grouped[type]}
           courseId={courseId}
           onDelete={handleDelete}
           getStatus={getStatus}
+          t={t}
         />
       ))}
     </div>

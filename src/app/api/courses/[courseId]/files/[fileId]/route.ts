@@ -49,6 +49,10 @@ export async function GET(_request: NextRequest, { params }: RouteParams) {
       lastReadPage: file.last_read_page,
       uploadedAt: file.uploaded_at,
       downloadUrl,
+      imageExtractionStatus: file.image_extraction_status || 'pending',
+      imageExtractionProgress: file.image_extraction_progress || 0,
+      // Content hash for cache validation (computed during upload)
+      contentHash: file.content_hash || null,
     })
   } catch {
     return errors.internalError()

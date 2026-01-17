@@ -13,6 +13,7 @@ import {
   getContextSummary,
   type ContextRetrievalResult,
 } from '@/lib/context'
+import { getUserExplainLocale, getLocalizedSystemPrompt } from '@/lib/user-preferences'
 import { z } from 'zod'
 
 const requestSchema = z.object({
@@ -38,6 +39,10 @@ export async function POST(request: NextRequest) {
     if (authError || !user) {
       return errors.unauthorized()
     }
+
+    // Get user's preferred explanation language
+    const explainLocale = await getUserExplainLocale(user.id)
+
 
     // Parse and validate request body
     const body = await request.json()
@@ -136,7 +141,8 @@ export async function POST(request: NextRequest) {
     // Build system message with context enhancement
     const baseSystemMessage =
       'You are an expert educational AI tutor. You help students understand academic material by answering their questions thoroughly and accurately. Always reference page numbers when the information comes from specific pages. Use Markdown formatting and LaTeX for math ($inline$ or $$block$$).'
-    const systemMessage = buildEnhancedSystemMessage(baseSystemMessage, contextResult)
+    const localizedBaseMessage = getLocalizedSystemPrompt(baseSystemMessage, explainLocale)
+    const systemMessage = buildEnhancedSystemMessage(localizedBaseMessage, contextResult)
 
     // Call OpenAI with streaming
     const openai = getOpenAIClient()
@@ -220,6 +226,7 @@ export async function GET(request: NextRequest) {
     if (authError || !user) {
       return errors.unauthorized()
     }
+
 
     const { searchParams } = new URL(request.url)
     const fileId = searchParams.get('fileId')

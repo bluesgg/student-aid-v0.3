@@ -1,4 +1,7 @@
 const { withSentryConfig } = require('@sentry/nextjs')
+const createNextIntlPlugin = require('next-intl/plugin')
+
+const withNextIntl = createNextIntlPlugin('./src/i18n/request.ts')
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
@@ -11,6 +14,9 @@ const nextConfig = {
     serverActions: {
       bodySizeLimit: '10mb',
     },
+    // Don't bundle pdfjs-dist for server - it has browser-specific code
+    // that fails when bundled by webpack
+    serverComponentsExternalPackages: ['pdfjs-dist'],
   },
 
   // Image optimization
@@ -54,6 +60,9 @@ const sentryWebpackPluginOptions = {
 }
 
 // Export with Sentry if DSN is configured, otherwise export plain config
+// Chain plugins: withNextIntl wraps the config first
+const configWithIntl = withNextIntl(nextConfig)
+
 module.exports = process.env.SENTRY_DSN
-  ? withSentryConfig(nextConfig, sentryWebpackPluginOptions)
-  : nextConfig
+  ? withSentryConfig(configWithIntl, sentryWebpackPluginOptions)
+  : configWithIntl

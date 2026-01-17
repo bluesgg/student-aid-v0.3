@@ -1,0 +1,236 @@
+{
+  "common": {
+    "loading": "Loading...",
+    "error": "An error occurred",
+    "save": "Save",
+    "cancel": "Cancel",
+    "confirm": "Confirm",
+    "skip": "Skip",
+    "close": "Close",
+    "back": "Back",
+    "next": "Next",
+    "submit": "Submit",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search",
+    "noResults": "No results found",
+    "retry": "Retry"
+  },
+  "nav": {
+    "courses": "Courses",
+    "settings": "Settings",
+    "signOut": "Sign out"
+  },
+  "auth": {
+    "login": "Log in",
+    "register": "Create account",
+    "email": "Email",
+    "password": "Password",
+    "confirmPassword": "Confirm password",
+    "forgotPassword": "Forgot password?",
+    "noAccount": "Don't have an account?",
+    "hasAccount": "Already have an account?",
+    "loginSuccess": "Logged in successfully",
+    "registerSuccess": "Account created! Please check your email to verify.",
+    "logoutSuccess": "Logged out successfully"
+  },
+  "settings": {
+    "title": "Settings",
+    "tabs": {
+      "language": "Language",
+      "usage": "Usage"
+    },
+    "language": {
+      "title": "Language Settings",
+      "description": "Configure your preferred languages for the application",
+      "uiLanguage": "Interface Language",
+      "uiLanguageDescription": "The language used for buttons, menus, and other UI elements",
+      "explainLanguage": "AI Explanation Language",
+      "explainLanguageDescription": "The language AI will use when explaining content",
+      "saveSuccess": "Language settings saved",
+      "saveError": "Failed to save language settings"
+    }
+  },
+  "usage": {
+    "title": "Usage Statistics",
+    "quota": "Quota",
+    "quotaUsage": "Quota Usage",
+    "used": "Used",
+    "remaining": "Remaining",
+    "resetDate": "Resets on",
+    "estimatedCost": "Estimated Monthly Cost",
+    "tokenUsage": "Token Usage",
+    "total": "total",
+    "costBreakdown": "Cost Breakdown",
+    "costBreakdownByOp": "Cost Breakdown by Operation",
+    "noData": "No usage data yet",
+    "noQuotaData": "No quota data available",
+    "totalOperations": "total operations",
+    "operations": "operations",
+    "totalCostPeriod": "Total Cost This Period",
+    "ofTotal": "of total",
+    "tokensPerOp": "tokens/op",
+    "currentPeriod": "Current Period",
+    "projected": "Projected",
+    "actualSpend": "Actual spend",
+    "ifPaceContinues": "If pace continues",
+    "basedOnDays": "Based on {days} days of usage",
+    "statusNormal": "Usage on track",
+    "statusWarning": "Moderate usage - monitor your spending",
+    "statusDanger": "High usage - consider reducing AI operations",
+    "levelNormal": "Normal",
+    "levelWarning": "Moderate",
+    "levelDanger": "High",
+    "inputTokens": "Input Tokens",
+    "outputTokens": "Output Tokens",
+    "tokenInfo": "Input tokens are from prompts (your questions + document context). Output tokens are from AI responses. Output tokens typically cost more per token.",
+    "buckets": {
+      "autoExplain": "Auto Explain (Stickers)",
+      "learningInteractions": "Q&A & Selection Explain",
+      "documentSummary": "Document Summaries",
+      "sectionSummary": "Section Summaries",
+      "courseSummary": "Course Outlines"
+    },
+    "bucketDescriptions": {
+      "autoExplain": "Automatic explanations when hovering over concepts",
+      "learningInteractions": "Ask questions and explain selected text",
+      "documentSummary": "Generate summaries for entire documents",
+      "sectionSummary": "Generate summaries for page ranges",
+      "courseSummary": "Generate course outlines from all materials"
+    }
+  },
+  "courses": {
+    "title": "My Courses",
+    "create": "Create Course",
+    "newCourse": "New Course",
+    "empty": "No courses yet. Create your first course to get started!",
+    "name": "Course Name",
+    "namePlaceholder": "e.g., Calculus I",
+    "school": "School",
+    "schoolPlaceholder": "e.g., ABC University",
+    "term": "Term",
+    "files": "Files",
+    "file": "file",
+    "filesCount": "files",
+    "neverVisited": "Never visited",
+    "lastVisited": "Last visited",
+    "creating": "Creating...",
+    "deleting": "Deleting...",
+    "deleteTitle": "Delete course?",
+    "deleteMessage": "Are you sure you want to delete <strong>{name}</strong>? This will also delete all uploaded materials and AI-generated content.",
+    "confirmDelete": "Are you sure you want to delete this course? This will also delete all files in this course.",
+    "deleteSuccess": "Course deleted",
+    "deleteError": "Failed to delete course",
+    "deleteCourse": "Delete course"
+  },
+  "files": {
+    "title": "Course Materials",
+    "upload": "Upload PDF",
+    "uploadFile": "Upload File",
+    "empty": "No files yet. Upload your first PDF!",
+    "type": "Type",
+    "page": "page",
+    "pages": "pages",
+    "uploaded": "Uploaded",
+    "dragAndDropOr": "Drag and drop PDF files here, or",
+    "browse": "browse",
+    "fileName": "File name",
+    "dragAndDrop": "Drag and drop your PDF here",
+    "or": "or",
+    "browseFiles": "browse files",
+    "selectFile": "Select a file",
+    "uploading": "Uploading...",
+    "processing": "Processing...",
+    "uploadSuccess": "File uploaded successfully",
+    "uploadError": "Failed to upload file",
+    "uploadAll": "Upload all ({count} files)",
+    "maxSize": "Max file size: {size}MB",
+    "pdfOnly": "PDF files only",
+    "pptNotSupported": "PPT/PPTX files are not supported. Please convert to PDF before uploading.",
+    "scanned": "Scanned",
+    "deleteFile": "Delete file",
+    "confirmDelete": "Are you sure you want to delete this file?",
+    "confirmDeleteMessage": "Delete \"{name}\"? This will also delete all AI-generated content for this file.",
+    "loadError": "Failed to load files. Please try again.",
+    "types": {
+      "Lecture": "Lecture Notes",
+      "Homework": "Homework",
+      "Exam": "Exams",
+      "Other": "Other Materials"
+    },
+    "extraction": {
+      "aiReady": "AI Ready",
+      "aiReadyTooltip": "AI ready - {count} knowledge entries extracted",
+      "analyzing": "Analyzing",
+      "analyzingPages": "{processed}/{total} pages",
+      "starting": "Starting...",
+      "analyzingTooltip": "Analyzing document - {progress}",
+      "partial": "Partial",
+      "failedTooltip": "Analysis failed: {error}"
+    },
+    "imageExtraction": {
+      "ready": "Images Ready",
+      "readyTooltip": "Click-to-explain images detected",
+      "detecting": "Images",
+      "progress": "{processed}/{total}",
+      "detectingTooltip": "Detecting images - {progress} pages",
+      "failed": "Images N/A",
+      "failedTooltip": "Image detection failed"
+    }
+  },
+  "reader": {
+    "explainPage": "Explain Page",
+    "explainSelection": "Explain Selection",
+    "askQuestion": "Ask a Question",
+    "summary": "Summary",
+    "stickers": "Stickers",
+    "qa": "Q&A",
+    "markImage": "Mark Image",
+    "exitMarkMode": "Exit",
+    "noImageDetected": "No image detected at this position",
+    "drawManually": "Draw manually",
+    "markImageTooltip": "Click an image to explain, or draw rectangle for missed images"
+  },
+  "pdf": {
+    "loading": {
+      "downloading": "Downloading...",
+      "downloadingPercent": "Downloading... {percent}%",
+      "downloadingSize": "Downloading... {size} MB",
+      "loadingPage": "Loading page {current} of {total}",
+      "loadingFromCache": "Loading from cache...",
+      "preparingDocument": "Preparing document..."
+    },
+    "cache": {
+      "title": "PDF Cache",
+      "size": "{size} MB used",
+      "fileCount": "{count} PDFs cached",
+      "clearButton": "Clear PDF Cache",
+      "clearConfirm": "Are you sure you want to clear all cached PDFs?",
+      "clearSuccess": "PDF cache cleared"
+    },
+    "error": {
+      "loadFailed": "Failed to load PDF",
+      "cacheFailed": "Failed to cache PDF (continuing without cache)"
+    }
+  },
+  "stickers": {
+    "title": "Stickers",
+    "empty": "No stickers on this page",
+    "followUp": "Follow-up",
+    "collapse": "Collapse",
+    "expand": "Expand"
+  },
+  "languageModal": {
+    "title": "Welcome to StudentAid!",
+    "description": "Please select your preferred languages. You can change these later in Settings.",
+    "continue": "Continue"
+  },
+  "errors": {
+    "unauthorized": "Please log in to continue",
+    "notFound": "Resource not found",
+    "serverError": "Something went wrong. Please try again.",
+    "quotaExceeded": "You've reached your usage limit. Please wait for the quota to reset.",
+    "networkError": "Network error. Please check your connection."
+  }
+}

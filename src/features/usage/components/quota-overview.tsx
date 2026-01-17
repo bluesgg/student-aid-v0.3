@@ -1,6 +1,7 @@
 'use client'
 
 import { memo } from 'react'
+import { useTranslations } from 'next-intl'
 import { QuotaProgressBar } from './quota-progress-bar'
 
 interface QuotaData {
@@ -13,23 +14,11 @@ interface QuotaOverviewProps {
   quotas: QuotaData[]
 }
 
-const BUCKET_LABELS: Record<string, string> = {
-  autoExplain: 'Auto Explain (Stickers)',
-  learningInteractions: 'Q&A & Selection Explain',
-  documentSummary: 'Document Summaries',
-  sectionSummary: 'Section Summaries',
-  courseSummary: 'Course Outlines',
-}
-
-const BUCKET_DESCRIPTIONS: Record<string, string> = {
-  autoExplain: 'Automatic explanations when hovering over concepts',
-  learningInteractions: 'Ask questions and explain selected text',
-  documentSummary: 'Generate summaries for entire documents',
-  sectionSummary: 'Generate summaries for page ranges',
-  courseSummary: 'Generate course outlines from all materials',
-}
+type BucketKey = 'autoExplain' | 'learningInteractions' | 'documentSummary' | 'sectionSummary' | 'courseSummary'
 
 function QuotaOverviewComponent({ quotas }: QuotaOverviewProps) {
+  const t = useTranslations('usage')
+
   // Sort quotas by usage percentage (highest first)
   const sortedQuotas = [...quotas].sort((a, b) => {
     const percentA = a.limit > 0 ? a.used / a.limit : 0
@@ -40,21 +29,39 @@ function QuotaOverviewComponent({ quotas }: QuotaOverviewProps) {
   const totalUsed = quotas.reduce((sum, q) => sum + q.used, 0)
   const totalLimit = quotas.reduce((sum, q) => sum + q.limit, 0)
 
+  const getBucketLabel = (bucket: string): string => {
+    const key = bucket as BucketKey
+    try {
+      return t(`buckets.${key}`)
+    } catch {
+      return bucket
+    }
+  }
+
+  const getBucketDescription = (bucket: string): string | undefined => {
+    const key = bucket as BucketKey
+    try {
+      return t(`bucketDescriptions.${key}`)
+    } catch {
+      return undefined
+    }
+  }
+
   return (
     <div className="bg-white rounded-lg border border-gray-200 overflow-hidden">
       <div className="px-4 py-3 bg-gray-50 border-b border-gray-200">
         <div className="flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-900">Quota Usage</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('quotaUsage')}</h3>
           <span className="text-xs text-gray-500">
-            {totalUsed} / {totalLimit} total operations
+            {totalUsed} / {totalLimit} {t('totalOperations')}
           </span>
         </div>
       </div>
 
       <div className="divide-y divide-gray-100">
         {sortedQuotas.map((quota) => {
-          const label = BUCKET_LABELS[quota.bucket] || quota.bucket
-          const description = BUCKET_DESCRIPTIONS[quota.bucket]
+          const label = getBucketLabel(quota.bucket)
+          const description = getBucketDescription(quota.bucket)
 
           return (
             <div key={quota.bucket} className="p-4">
@@ -93,7 +100,7 @@ function QuotaOverviewComponent({ quotas }: QuotaOverviewProps) {
               d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"
             />
           </svg>
-          <p className="mt-2 text-sm text-gray-500">No quota data available</p>
+          <p className="mt-2 text-sm text-gray-500">{t('noQuotaData')}</p>
         </div>
       )}
     </div>

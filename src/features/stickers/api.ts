@@ -20,6 +20,8 @@ export interface Sticker {
       width: number
       height: number
     } | null
+    /** True for PPT-type full-page stickers */
+    isFullPage?: boolean
   }
   parentId: string | null
   contentMarkdown: string

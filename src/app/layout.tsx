@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import { getLocale, getMessages } from 'next-intl/server'
 import { Providers } from '@/components/providers'
 import './globals.css'
 
@@ -15,15 +16,20 @@ export const metadata: Metadata = {
   keywords: ['study', 'education', 'AI', 'PDF', 'notes', 'learning'],
 }
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
+  const locale = await getLocale()
+  const messages = await getMessages()
+
   return (
-    <html lang="en" className={inter.variable}>
-      <body className="min-h-screen bg-white font-sans antialiased">
-        <Providers>{children}</Providers>
+    <html lang={locale} className={inter.variable}>
+      <body className="h-screen overflow-hidden bg-white font-sans antialiased">
+        <Providers locale={locale} messages={messages}>
+          {children}
+        </Providers>
       </body>
     </html>
   )

@@ -81,6 +81,7 @@ For each entry, provide:
 - content: Full explanation in English (100-500 words)
 - keywords: Array of search keywords (English, 3-8 keywords)
 - quality_score: Your confidence in this entry's reusability (0.0-1.0)
+- source_page: The page number where this entry was found (look for [Page X] markers in the text)
 
 Quality score guidelines:
 - 0.9-1.0: Core concepts that will be referenced frequently
@@ -95,7 +96,8 @@ Respond ONLY with valid JSON in this format:
       "title": "Derivative",
       "content": "The derivative of a function f(x) is defined as...",
       "keywords": ["derivative", "rate of change", "instantaneous", "calculus"],
-      "quality_score": 0.95
+      "quality_score": 0.95,
+      "source_page": 3
     }
   ]
 }
@@ -129,6 +131,7 @@ For each entry, provide:
 - content: Full explanation in English (100-500 words)
 - keywords: Array of search keywords (English, 3-8 keywords)
 - quality_score: Your confidence in this entry's reusability (0.0-1.0)
+- source_page: The page number where this entry was found (look for [Page X] markers in the text)
 
 Quality requirements:
 - Technical terms must be correctly translated
@@ -144,7 +147,8 @@ Respond ONLY with valid JSON in this format:
       "title": "Term Name",
       "content": "Definition in English...",
       "keywords": ["keyword1", "keyword2"],
-      "quality_score": 0.85
+      "quality_score": 0.85,
+      "source_page": 3
     }
   ]
 }
@@ -314,15 +318,22 @@ Remember to respond with valid JSON only.`
         typeof entry.quality_score === 'number'
       )
     })
-    .map((entry) => ({
-      type: entry.type as ContextEntryType,
-      title: entry.title.slice(0, 200), // Limit title length
-      content: entry.content,
-      sourcePage: startPage, // Use start page of batch
-      keywords: entry.keywords.slice(0, 10), // Limit keywords
-      qualityScore: entry.quality_score * qualityMultiplier,
-      language: 'en',
-    }))
+    .map((entry) => {
+      // Use LLM-returned source_page if valid, otherwise fallback to startPage
+      let sourcePage = startPage
+      if (typeof entry.source_page === 'number' && entry.source_page >= startPage && entry.source_page <= endPage) {
+        sourcePage = entry.source_page
+      }
+      return {
+        type: entry.type as ContextEntryType,
+        title: entry.title.slice(0, 200), // Limit title length
+        content: entry.content,
+        sourcePage,
+        keywords: entry.keywords.slice(0, 10), // Limit keywords
+        qualityScore: entry.quality_score * qualityMultiplier,
+        language: 'en',
+      }
+    })
 }
 
 /**
@@ -429,7 +440,8 @@ export async function processContextJob(job: ExtractionJob): Promise<number> {
           break
         }
 
-        batchText += text + '\n\n'
+        // Add page marker so LLM can identify source page for each entry
+        batchText += `[Page ${currentPage}]\n${text}\n\n`
         batchWords += pageWords
         currentPage++
       }
