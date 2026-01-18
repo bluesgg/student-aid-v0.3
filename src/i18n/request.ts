@@ -16,10 +16,22 @@ async function getMessages(locale: Locale) {
 }
 
 /**
+ * Check if we're in a static generation context
+ */
+function isStaticGeneration(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    'digest' in error &&
+    (error as Error & { digest?: string }).digest === 'DYNAMIC_SERVER_USAGE'
+  )
+}
+
+/**
  * Get user's preferred UI locale from database
  */
 async function getUserLocale(): Promise<Locale> {
   try {
+    // cookies() throws during static generation - catch and return default
     const cookieStore = cookies()
 
     const supabase = createServerClient(
@@ -58,6 +70,11 @@ async function getUserLocale(): Promise<Locale> {
 
     return defaultLocale
   } catch (error) {
+    // During static generation, cookies() throws DYNAMIC_SERVER_USAGE
+    // This is expected - silently return default locale
+    if (isStaticGeneration(error)) {
+      return defaultLocale
+    }
     console.error('Error getting user locale:', error)
     return defaultLocale
   }
